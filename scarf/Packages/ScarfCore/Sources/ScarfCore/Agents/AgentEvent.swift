@@ -11,8 +11,13 @@ public enum AgentEvent: Equatable, Sendable {
     case toolStarted(AgentToolCall)
     case toolUpdated(AgentToolCall)
     case toolCompleted(AgentToolResult)
+    case commandStarted(AgentCommand)
+    case commandOutput(commandID: String, text: String)
+    case commandCompleted(AgentCommandResult)
+    case fileChanged(AgentFileChange)
     case permissionRequested(AgentPermissionRequest)
     case usageUpdated(AgentUsage)
-    case sessionCompleted
+    case turnCompleted(stopReason: String?)
+    case sessionClosed
     case error(AgentError)
 }
