@@ -32,7 +32,7 @@ struct ClaudeStreamDecoderTests {
         let line = #"{"type":"assistant","session_id":"s","message":{"content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"git status"}}]}}"#
         let events = try await decoder.decode(line: line)
         #expect(events == [
-            .toolStarted(AgentToolCall(id: "tool-1", title: "Bash", kind: "Bash", status: .running, input: #"{"command":"git status"}"#)),
+            .toolStarted(AgentToolCall(id: "tool-1", title: "git status", kind: "Bash", status: .running, input: #"{"command":"git status"}"#)),
             .commandStarted(AgentCommand(id: "tool-1", command: "git status", status: .running))
         ])
     }
@@ -48,12 +48,12 @@ struct ClaudeStreamDecoderTests {
         ])
     }
 
-    @Test("write tool result yields a file change")
+    @Test("write tool result yields a conservative file change")
     func fileChange() async throws {
         let decoder = ClaudeStreamDecoder()
         _ = try await decoder.decode(line: #"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-2","name":"Write","input":{"file_path":"/tmp/project/a.swift","content":"x"}}]}}"#)
         let events = try await decoder.decode(line: #"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-2","content":"written"}]}}"#)
-        #expect(events.contains(.fileChanged(AgentFileChange(path: "/tmp/project/a.swift", kind: .created))))
+        #expect(events.contains(.fileChanged(AgentFileChange(path: "/tmp/project/a.swift", kind: .unknown))))
     }
 
     @Test("result emits usage, error when needed, and turn completion")
