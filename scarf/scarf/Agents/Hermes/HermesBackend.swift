@@ -54,13 +54,6 @@ actor HermesBackend: AgentBackend {
         }
     }
 
-    deinit {
-        eventContinuation.finish()
-        for task in forwardingTasks.values {
-            task.cancel()
-        }
-    }
-
     nonisolated private static func makeInstallationProbe(
         context: ServerContext
     ) -> InstallationProbe {
@@ -73,9 +66,10 @@ actor HermesBackend: AgentBackend {
                     timeout: 10
                 )
                 guard result.exitCode == 0 else {
-                    return .unavailable(reason: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+                    let reason = result.stderrString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return .unavailable(reason: reason)
                 }
-                let version = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                let version = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
                 return .available(version: version.isEmpty ? nil : version)
             } catch {
                 return .notInstalled
