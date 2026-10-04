@@ -25,7 +25,7 @@ struct AgentRegistryTests {
         func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
             AgentSession(id: "stub", backendID: id, workingDirectory: configuration.workingDirectory)
         }
-        func resumeSession(_ session: AgentSession) async throws {}
+        func resumeSession(_ session: AgentSession) async throws -> AgentSession { session }
         func send(_ message: AgentMessage, in session: AgentSession) async throws {}
         func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws {}
         func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws {}
