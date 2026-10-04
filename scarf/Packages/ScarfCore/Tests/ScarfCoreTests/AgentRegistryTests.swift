@@ -27,6 +27,8 @@ struct AgentRegistryTests {
         }
         func resumeSession(_ session: AgentSession) async throws {}
         func send(_ message: AgentMessage, in session: AgentSession) async throws {}
+        func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws {}
+        func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws {}
         func cancel(session: AgentSession) async {}
         func close(session: AgentSession) async {}
     }
