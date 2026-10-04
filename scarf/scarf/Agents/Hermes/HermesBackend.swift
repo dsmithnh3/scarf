@@ -21,7 +21,6 @@ actor HermesBackend: AgentBackend {
         .mcp,
         .skills,
         .usage,
-        .fileChanges,
         .shellCommands,
         .memory,
         .cron,
@@ -67,12 +66,12 @@ actor HermesBackend: AgentBackend {
                 )
                 guard result.exitCode == 0 else {
                     let reason = result.stderrString.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return .unavailable(reason: reason)
+                    return .unavailable(reason: reason.isEmpty ? "Hermes exited with status \(result.exitCode)" : reason)
                 }
                 let version = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
                 return .available(version: version.isEmpty ? nil : version)
             } catch {
-                return .notInstalled
+                return .unavailable(reason: error.localizedDescription)
             }
         }
     }
@@ -106,11 +105,11 @@ actor HermesBackend: AgentBackend {
         return session
     }
 
-    func resumeSession(_ session: AgentSession) async throws {
+    func resumeSession(_ session: AgentSession) async throws -> AgentSession {
         guard session.backendID == .hermes else {
             throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
         }
-        if clients[session.id] != nil { return }
+        if clients[session.id] != nil { return session }
 
         let cwd = session.workingDirectory?.path ?? FileManager.default.currentDirectoryPath
         let client = ACPClient.forMacApp(context: context, projectCwd: cwd)
@@ -118,12 +117,15 @@ actor HermesBackend: AgentBackend {
         let loadedID = try await client.loadSession(cwd: cwd, sessionId: session.id)
         clients[loadedID] = client
         startForwarding(client: client, sessionID: loadedID)
-        eventContinuation.yield(.sessionStarted(AgentSession(
+
+        let resumed = AgentSession(
             id: loadedID,
             backendID: .hermes,
             workingDirectory: session.workingDirectory,
             metadata: session.metadata
-        )))
+        )
+        eventContinuation.yield(.sessionStarted(resumed))
+        return resumed
     }
 
     func send(_ message: AgentMessage, in session: AgentSession) async throws {
@@ -141,6 +143,33 @@ actor HermesBackend: AgentBackend {
         for event in HermesEventMapper.map(.promptComplete(sessionId: session.id, response: response)) {
             eventContinuation.yield(event)
         }
+    }
+
+    func respond(
+        to request: AgentPermissionRequest,
+        optionID: String,
+        in session: AgentSession
+    ) async throws {
+        guard let requestID = Int(request.id) else {
+            throw AgentError(code: "hermes.invalid-permission-id", message: "Hermes permission request id is invalid")
+        }
+        guard let client = clients[session.id] else {
+            throw AgentError(code: "hermes.session-not-active", message: "Hermes session is not active")
+        }
+        await client.respondToPermission(requestId: requestID, optionId: optionID)
+    }
+
+    func cancelPermission(
+        _ request: AgentPermissionRequest,
+        in session: AgentSession
+    ) async throws {
+        guard let requestID = Int(request.id) else {
+            throw AgentError(code: "hermes.invalid-permission-id", message: "Hermes permission request id is invalid")
+        }
+        guard let client = clients[session.id] else {
+            throw AgentError(code: "hermes.session-not-active", message: "Hermes session is not active")
+        }
+        await client.cancelPermission(requestId: requestID)
     }
 
     func cancel(session: AgentSession) async {
@@ -161,6 +190,7 @@ actor HermesBackend: AgentBackend {
         if let client = clients.removeValue(forKey: session.id) {
             await client.stop()
         }
+        eventContinuation.yield(.sessionClosed)
     }
 
     private func startForwarding(client: ACPClient, sessionID: String) {
