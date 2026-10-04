@@ -27,8 +27,9 @@ struct ClaudeProcessConfigurationTests {
         #expect(command.arguments.contains("11111111-1111-4111-8111-111111111111"))
         #expect(command.arguments.contains("--model"))
         #expect(command.arguments.contains("opus"))
-        #expect(command.arguments.contains("--permission-prompts"))
-        #expect(command.arguments.contains("none"))
+        #expect(command.arguments.contains("--permission-mode"))
+        #expect(command.arguments.contains("dontAsk"))
+        #expect(!command.arguments.contains("--dangerously-skip-permissions"))
     }
 
     @Test("resume selects existing Claude session instead of assigning a new id")
