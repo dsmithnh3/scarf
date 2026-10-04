@@ -36,10 +36,10 @@ enum ClaudeProcessConfiguration {
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
-            // Until the host/control permission protocol is implemented, deny
-            // requests that require an external approver rather than bypassing
-            // Claude Code's safety controls.
-            "--permission-prompts", "none",
+            // Until Scarf implements Claude's host-side can_use_tool bridge,
+            // unresolved permission requests must be rejected instead of
+            // hanging in a non-interactive process or bypassing safeguards.
+            "--permission-mode", "dontAsk",
         ]
 
         if configuration.resume {
