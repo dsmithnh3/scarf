@@ -95,14 +95,14 @@ actor ClaudeStreamDecoder {
             else { continue }
 
             let input = block["input"] as? [String: Any] ?? [:]
-            let inputJSON = Self.jsonString(input)
+            let inputJSON = jsonString(input)
             let command = input["command"] as? String
             let path = (input["file_path"] as? String) ?? (input["path"] as? String)
             tools[toolID] = ToolMetadata(name: name, command: command, path: path)
 
             events.append(.toolStarted(AgentToolCall(
                 id: toolID,
-                title: Self.toolTitle(name: name, input: input),
+                title: toolTitle(name: name, input: input),
                 kind: name,
                 status: .running,
                 input: inputJSON
@@ -128,7 +128,7 @@ actor ClaudeStreamDecoder {
         for block in content where block["type"] as? String == "tool_result" {
             guard let toolID = block["tool_use_id"] as? String else { continue }
             let isError = block["is_error"] as? Bool ?? false
-            let output = Self.contentText(block["content"])
+            let output = contentText(block["content"])
             let status: AgentToolStatus = isError ? .failed : .completed
 
             events.append(.toolCompleted(AgentToolResult(
@@ -169,10 +169,10 @@ actor ClaudeStreamDecoder {
 
         if let usage = json["usage"] as? [String: Any] {
             events.append(.usageUpdated(AgentUsage(
-                inputTokens: Self.int(usage["input_tokens"]),
-                outputTokens: Self.int(usage["output_tokens"]),
-                reasoningTokens: Self.int(usage["thinking_tokens"]),
-                cachedReadTokens: Self.int(usage["cache_read_input_tokens"])
+                inputTokens: int(usage["input_tokens"]),
+                outputTokens: int(usage["output_tokens"]),
+                reasoningTokens: int(usage["thinking_tokens"]),
+                cachedReadTokens: int(usage["cache_read_input_tokens"])
             )))
         }
 
@@ -191,7 +191,7 @@ actor ClaudeStreamDecoder {
         return events
     }
 
-    nonisolated private static func toolTitle(name: String, input: [String: Any]) -> String {
+    private func toolTitle(name: String, input: [String: Any]) -> String {
         if let command = input["command"] as? String, !command.isEmpty { return command }
         if let path = (input["file_path"] as? String) ?? (input["path"] as? String), !path.isEmpty {
             return "\(name): \(path)"
@@ -199,14 +199,14 @@ actor ClaudeStreamDecoder {
         return name
     }
 
-    nonisolated private static func jsonString(_ object: [String: Any]) -> String? {
+    private func jsonString(_ object: [String: Any]) -> String? {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    nonisolated private static func contentText(_ value: Any?) -> String? {
+    private func contentText(_ value: Any?) -> String? {
         if let string = value as? String { return string }
         if let blocks = value as? [[String: Any]] {
             let text = blocks.compactMap { block -> String? in
@@ -218,7 +218,7 @@ actor ClaudeStreamDecoder {
         return nil
     }
 
-    nonisolated private static func int(_ value: Any?) -> Int {
+    private func int(_ value: Any?) -> Int {
         if let value = value as? Int { return value }
         if let value = value as? NSNumber { return value.intValue }
         return 0
