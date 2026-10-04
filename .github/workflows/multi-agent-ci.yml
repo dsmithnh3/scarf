@@ -1,0 +1,50 @@
+name: Multi-Agent Branch CI
+
+on:
+  push:
+    branches:
+      - feature/multi-agent-architecture
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'scarf/**'
+      - '.github/workflows/multi-agent-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multi-agent-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scarfcore-tests:
+    name: ScarfCore Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scarf/Packages/ScarfCore
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Run ScarfCore tests
+        run: swift test
+
+  macos-build:
+    name: macOS App Build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: xcodebuild -version
+      - name: Ensure Metal toolchain
+        run: |
+          if ! xcrun metal --version >/dev/null 2>&1 && ! xcrun -f metal >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Build Scarf Debug app
+        env:
+          CI: '1'
+        run: ./scripts/local-build.sh
