@@ -73,7 +73,7 @@ struct HermesEventMapperTests {
         #expect(events == [.permissionRequested(expected)])
     }
 
-    @Test("prompt completion emits usage then completion")
+    @Test("prompt completion emits usage then turn completion")
     func promptCompletion() {
         let result = ACPPromptResult(
             stopReason: "end_turn",
@@ -86,7 +86,7 @@ struct HermesEventMapperTests {
 
         #expect(HermesEventMapper.map(.promptComplete(sessionId: "s", response: result)) == [
             .usageUpdated(usage),
-            .sessionCompleted
+            .turnCompleted(stopReason: "end_turn")
         ])
     }
 
