@@ -10,7 +10,7 @@ public struct AgentModel: Codable, Equatable, Hashable, Sendable, Identifiable {
     }
 }
 
-public struct AgentSession: Codable, Equatable, Hashable, Sendable, Identifiable {
+public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public let id: String
     public let backendID: AgentID
     public var workingDirectory: URL?
