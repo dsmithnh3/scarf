@@ -47,6 +47,33 @@ struct ClaudeProcessManagerTests {
         #expect(json["type"] as? String == "user")
     }
 
+    @Test("manager sends interrupt through Claude control protocol without closing the process")
+    func sendsInterrupt() async throws {
+        let channel = MockChannel()
+        let manager = ClaudeProcessManager(
+            channelFactory: { _, _ in channel },
+            environmentProvider: { [:] }
+        )
+        let command = ClaudeProcessCommand(
+            executable: "/test/bin/claude",
+            arguments: [],
+            workingDirectory: URL(fileURLWithPath: "/tmp")
+        )
+
+        _ = try await manager.start(command: command)
+        let requestID = try await manager.sendInterrupt()
+
+        let lines = await channel.sentLines()
+        #expect(lines.count == 1)
+        let data = try #require(lines[0].data(using: .utf8))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["type"] as? String == "control_request")
+        #expect(json["request_id"] as? String == requestID)
+        let request = try #require(json["request"] as? [String: Any])
+        #expect(request["subtype"] as? String == "interrupt")
+        #expect(!(await channel.isClosed()))
+    }
+
     @Test("manager closes the underlying process channel")
     func closesChannel() async throws {
         let channel = MockChannel()
@@ -72,7 +99,8 @@ struct ClaudeProcessManagerTests {
         let counter = LockedCounter()
         let manager = ClaudeProcessManager(
             channelFactory: { _, _ in
-                await counter.next() == 1 ? first : second
+                let value = await counter.next()
+                return value == 1 ? first : second
             },
             environmentProvider: { [:] }
         )
