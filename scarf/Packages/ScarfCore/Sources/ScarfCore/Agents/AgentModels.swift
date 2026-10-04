@@ -142,6 +142,65 @@ public struct AgentPermissionRequest: Codable, Equatable, Hashable, Sendable, Id
     }
 }
 
+public enum AgentCommandStatus: String, Codable, Equatable, Hashable, Sendable {
+    case pending
+    case running
+    case completed
+    case failed
+    case cancelled
+}
+
+public struct AgentCommand: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public var command: String
+    public var status: AgentCommandStatus
+
+    public init(id: String, command: String, status: AgentCommandStatus) {
+        self.id = id
+        self.command = command
+        self.status = status
+    }
+}
+
+public struct AgentCommandResult: Codable, Equatable, Hashable, Sendable {
+    public let commandID: String
+    public var exitCode: Int32?
+    public var output: String?
+    public var errorOutput: String?
+
+    public init(
+        commandID: String,
+        exitCode: Int32? = nil,
+        output: String? = nil,
+        errorOutput: String? = nil
+    ) {
+        self.commandID = commandID
+        self.exitCode = exitCode
+        self.output = output
+        self.errorOutput = errorOutput
+    }
+}
+
+public enum AgentFileChangeKind: String, Codable, Equatable, Hashable, Sendable {
+    case created
+    case modified
+    case deleted
+    case renamed
+    case unknown
+}
+
+public struct AgentFileChange: Codable, Equatable, Hashable, Sendable {
+    public var path: String
+    public var kind: AgentFileChangeKind
+    public var diff: String?
+
+    public init(path: String, kind: AgentFileChangeKind, diff: String? = nil) {
+        self.path = path
+        self.kind = kind
+        self.diff = diff
+    }
+}
+
 public struct AgentUsage: Codable, Equatable, Hashable, Sendable {
     public var inputTokens: Int
     public var outputTokens: Int
