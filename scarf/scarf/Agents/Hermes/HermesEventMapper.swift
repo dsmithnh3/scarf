@@ -56,7 +56,7 @@ enum HermesEventMapper {
                 reasoningTokens: response.thoughtTokens,
                 cachedReadTokens: response.cachedReadTokens
             )
-            return [.usageUpdated(usage), .sessionCompleted]
+            return [.usageUpdated(usage), .turnCompleted(stopReason: response.stopReason)]
 
         case .connectionLost(let reason):
             return [.error(AgentError(
