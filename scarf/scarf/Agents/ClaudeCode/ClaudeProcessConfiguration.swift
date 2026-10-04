@@ -59,7 +59,9 @@ enum ClaudeProcessConfiguration {
         )
     }
 
-    static func userMessageLine(_ text: String) throws -> String {
+    /// One complete JSON input record. The process channel owns newline
+    /// framing and appends the terminator atomically when sending.
+    static func userMessageJSON(_ text: String) throws -> String {
         let object: [String: Any] = [
             "type": "user",
             "message": [
@@ -74,7 +76,7 @@ enum ClaudeProcessConfiguration {
         guard let json = String(data: data, encoding: .utf8) else {
             throw ClaudeProcessConfigurationError.invalidUTF8
         }
-        return json + "\n"
+        return json
     }
 }
 
