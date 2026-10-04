@@ -37,8 +37,19 @@ actor ClaudeProcessManager {
     }
 
     func sendUserMessage(_ text: String) async throws {
-        guard let channel else { throw ClaudeProcessManagerError.notRunning }
         let record = try ClaudeProcessConfiguration.userMessageJSON(text)
+        try await sendRecord(record)
+    }
+
+    @discardableResult
+    func sendInterrupt() async throws -> String {
+        let request = ClaudeControlRequest.interrupt()
+        try await sendRecord(ClaudeControlProtocol.encode(request))
+        return request.requestID
+    }
+
+    func sendRecord(_ record: String) async throws {
+        guard let channel else { throw ClaudeProcessManagerError.notRunning }
         try await channel.send(record)
     }
 
