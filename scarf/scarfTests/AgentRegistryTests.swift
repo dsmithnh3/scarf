@@ -67,6 +67,7 @@ struct AgentRegistryTests {
     @Test("missing backend returns nil")
     func missingBackend() async {
         let registry = AgentRegistry()
-        #expect(await registry.backend(for: AgentID("missing")) == nil)
+        let missing = await registry.backend(for: AgentID("missing"))
+        #expect(missing?.id == nil)
     }
 }
