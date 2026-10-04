@@ -46,12 +46,12 @@ struct ClaudeProcessConfigurationTests {
         #expect(!arguments.contains("--session-id"))
     }
 
-    @Test("user message is encoded as one JSONL input record")
+    @Test("user message is encoded as one channel-framed JSON record")
     func inputEncoding() throws {
-        let line = try ClaudeProcessConfiguration.userMessageLine("hello \"Claude\"\nnext")
-        #expect(line.hasSuffix("\n"))
+        let jsonRecord = try ClaudeProcessConfiguration.userMessageJSON("hello \"Claude\"\nnext")
+        #expect(!jsonRecord.hasSuffix("\n"))
 
-        let data = try #require(line.data(using: .utf8))
+        let data = try #require(jsonRecord.data(using: .utf8))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["type"] as? String == "user")
         let message = try #require(json["message"] as? [String: Any])
