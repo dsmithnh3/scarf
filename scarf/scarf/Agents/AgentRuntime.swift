@@ -1,6 +1,16 @@
 import Foundation
 import ScarfCore
 
+/// Read-only status snapshot used by agent-aware UI surfaces.
+///
+/// This deliberately carries no selection or mutation API. Exposing backend
+/// health in Settings must not change the backend used by existing Hermes chat.
+struct AgentBackendStatusSnapshot: Identifiable, Equatable, Sendable {
+    let id: AgentID
+    let displayName: String
+    let status: AgentInstallationStatus
+}
+
 /// Per-window/profile composition root for agent backends.
 ///
 /// Scarf's existing Hermes UI is server-context scoped: local and SSH windows
@@ -40,6 +50,25 @@ actor AgentRuntime {
         if !context.isRemote {
             await coordinator.register(ClaudeCodeBackend())
         }
+    }
+
+    /// Probe registered backends without changing routing or starting a session.
+    func statusSnapshots() async -> [AgentBackendStatusSnapshot] {
+        await configureIfNeeded()
+        let backends = await registry.availableBackends()
+        var snapshots: [AgentBackendStatusSnapshot] = []
+        snapshots.reserveCapacity(backends.count)
+
+        for backend in backends {
+            snapshots.append(
+                AgentBackendStatusSnapshot(
+                    id: backend.id,
+                    displayName: backend.displayName,
+                    status: await backend.installationStatus()
+                )
+            )
+        }
+        return snapshots
     }
 
     func backend(for project: ScarfProject) async -> (any AgentBackend)? {
