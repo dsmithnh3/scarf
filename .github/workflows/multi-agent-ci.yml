@@ -21,24 +21,34 @@ concurrency:
 jobs:
   scarfcore-tests:
     name: ScarfCore Tests
-    runs-on: ubuntu-latest
+    # ScarfCore includes SwiftUI-backed shared models, so it is not a Linux
+    # package despite being SwiftPM. Run it on the same current Apple
+    # toolchain family as the app build.
+    runs-on: macos-26
     defaults:
       run:
         working-directory: scarf/Packages/ScarfCore
     steps:
       - uses: actions/checkout@v4
-      - name: Swift version
-        run: swift --version
+      - name: Toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
       - name: Run ScarfCore tests
         run: swift test
 
   macos-build:
     name: macOS App Build
-    runs-on: macos-15
+    # Upstream swift-stats now declares swift-tools-version 6.2; macOS 15's
+    # default Xcode 16.4 cannot resolve it. macOS 26 currently supplies a
+    # Swift 6.2+ Xcode toolchain and matches current Scarf development needs.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - name: Xcode version
-        run: xcodebuild -version
+      - name: Toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
       - name: Ensure Metal toolchain
         run: |
           if ! xcrun metal --version >/dev/null 2>&1 && ! xcrun -f metal >/dev/null 2>&1; then
