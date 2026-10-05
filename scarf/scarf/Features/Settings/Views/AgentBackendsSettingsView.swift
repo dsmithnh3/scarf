@@ -99,7 +99,7 @@ private struct AgentBackendStatusRow: View {
         HStack(alignment: .center, spacing: ScarfSpace.s3) {
             Image(systemName: iconName)
                 .frame(width: 18)
-                .foregroundStyle(iconStyle)
+                .foregroundStyle(ScarfColor.foregroundMuted)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(snapshot.displayName)
@@ -128,10 +128,6 @@ private struct AgentBackendStatusRow: View {
         case .notInstalled: return "minus.circle"
         case .unavailable: return "exclamationmark.triangle"
         }
-    }
-
-    private var iconStyle: HierarchicalShapeStyle {
-        .init()
     }
 
     private var statusLabel: String {
