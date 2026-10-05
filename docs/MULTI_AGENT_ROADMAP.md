@@ -84,8 +84,13 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 4 Claude `can_use_tool` host round trip (wire + coordinator) (`16586ea9`) — `ClaudeCodeBackend` consumes incoming `control_request` / `can_use_tool` → `permissionRequested`; `respond`/`cancelPermission` send `ClaudeControlProtocol.encodePermissionResponse` allow/deny (cancel→deny). Channel stand-in + fake-process controller tests. Launch still `--permission-mode dontAsk`; `.permissions` stays unadvertised until a verified prompting mode matches the bridge. No CLUI UI. Tests: `ClaudeCodeBackendTests` permission suite. CI run [37383730860](https://github.com/dsmithnh3/scarf/actions/runs/37383730860) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 4 Claude host-prompting launch mode (`40c99134`) — replace `dontAsk` with verified Agent SDK host flags (`--permission-mode default` + `--permission-prompt-tool stdio`); advertise Claude `.permissions` behind an explicit launch+round-trip audit test. Hermes unchanged; no CLUI UI; no Codex. Tests: `ClaudeProcessConfigurationTests`, `ClaudeCodeBackendTests` host-prompting audit, ScarfCore capability defaults. CI filter also runs `ClaudeProcessConfigurationTests`. CI run [37385508997](https://github.com/dsmithnh3/scarf/actions/runs/37385508997) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 5 provider installation/version diagnostics (`34655028`, CI note `06d8ef1c`) — `AgentBackend.resolvedExecutablePath()` + `AgentBackendStatusSnapshot.executablePath`; Claude path/version/not-installed; Hermes local `HermesPathSet.resolveInstalledBinary` / `hermesBinaryIfInstalled` (missing → `.notInstalled`, no guessed path); Settings detail shows `version · path`. No auth/models UI; no Codex. Tests: `AgentProviderDiagnosticsTests`, `HermesPathSetInstalledBinaryTests`, Claude path asserts in `ClaudeCodeBackendTests`. CI filters include `AgentProviderDiagnosticsTests` + `HermesPathSetInstalled`. CI run [37387956415](https://github.com/dsmithnh3/scarf/actions/runs/37387956415) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 5 project default agent preference UI + models blocked — `ProjectAgentPreferencePresenter` builds Hermes-always / Claude-when-available options from installation probes (detail = `version · path`); New Project + Project Chat Settings share it; Chat Settings saves via `ProjectStore.setPreferredAgentID` and hides Hermes model/auto-accept when Claude is selected. `HermesBackend.models()` / `ClaudeCodeBackend.models()` remain `[]` (locked by diagnostics tests) — no invented model lists or OAuth. No Codex. Tests: `ProjectAgentPreferencePresenterTests` (+ existing store suite). Multi-Agent filter already includes `ProjectAgentPreference`.
 
 ## Current TDD milestone
+
+### Phase 5 — project default agent preference (models blocked)
+
+**GREEN for project-default backend clarity; models discovery BLOCKED.** Pure `ProjectAgentPreferencePresenter` + Chat Settings agent picker wired to existing install/path/version diagnostics. Hermes remains default; Claude selectable only when `.available`. Hermes model presets / auto-accept stay Hermes-only. Multi-agent `models()` stays empty until a verified discovery path exists (Hermes catalog UI remains authoritative; Claude awaits control-init discovery — do not hard-code). Auth/OAuth UI not invented. Permissions/lifecycle/diagnostics untouched.
 
 ### Phase 5 — provider installation/version diagnostics
 
@@ -207,7 +212,7 @@ Claude process cleanup is locked without a production change. Conversation close
 2. ~~Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.~~ **Done** — both stores are `GuardedSidecarStore` with `refuseForever`.
 3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI). Multi-Agent Tests [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 4. ~~Integrate Hermes skills/plugins/MCP read-only into the catalog.~~ **Done** — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call `HermesPluginDirectoryScanner`, `SkillsScanner`, and a lightweight config.yaml MCP roster; Claude skill catalog stays empty; no UI. Tests: `AgentExtensionCatalogHermesLoaderTests`. Commits `ce4b7232` / `fda7fcc8`. Multi-Agent+Compile+macOS [37372242630](https://github.com/dsmithnh3/scarf/actions/runs/37372242630); Claude prior [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
-5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next clear slice: Phase 5 models / project defaults / health (installation/version diagnostics landed).
+5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Phase 5 project-default preference landed; **multi-agent model discovery remains blocked** (empty `models()`). Next clear slice: truthful model listing once a verified discovery path exists, or optional health/auth status without inventing OAuth.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -353,8 +358,8 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 
 - Backend-aware slash command registry + Scarf-native hint query + multi-agent composer menu (`AgentSlashHintMenu`; no CLUI transplant).
 - Live Hermes ACP command discovery into the registry (static Hermes fallback retained).
-- Agent/provider settings for Hermes and Claude Code (installation/path/version diagnostics landed; auth/models still open).
-- Project-level backend/model preference.
+- Agent/provider settings for Hermes and Claude Code (installation/path/version diagnostics landed; project-default backend picker landed; auth/models still open — models blocked).
+- Project-level backend preference (Chat Settings + New Project via `ProjectAgentPreferencePresenter`); Hermes model presets remain Hermes-only.
 - Scarf-native backend indicator/switcher.
 - Transcript rendering for reasoning, tool calls, commands, files, usage, permissions, and errors.
 - Diff/artifact review surfaces adapted to Scarf's visual language.

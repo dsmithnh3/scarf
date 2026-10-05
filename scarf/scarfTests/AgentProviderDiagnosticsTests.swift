@@ -140,4 +140,24 @@ struct AgentProviderDiagnosticsTests {
                 == "Claude Code executable was not found"
         )
     }
+
+    @Test("Claude models() stays empty until a verified discovery path exists")
+    func claudeModelsDiscoveryBlocked() async throws {
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/custom/bin/claude" },
+            installationProbe: { _ in .available(version: "2.1-test") },
+            environmentProvider: { [:] }
+        )
+        #expect(try await backend.models().isEmpty)
+    }
+
+    @Test("Hermes models() stays empty; Hermes catalog UI remains authoritative")
+    func hermesModelsDiscoveryBlocked() async throws {
+        let backend = HermesBackend(
+            context: .local,
+            executableResolver: { "/opt/homebrew/bin/hermes" },
+            installationProbe: { .available(version: "3.5-test") }
+        )
+        #expect(try await backend.models().isEmpty)
+    }
 }

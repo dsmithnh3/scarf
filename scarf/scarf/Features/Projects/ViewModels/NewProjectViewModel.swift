@@ -76,48 +76,27 @@ final class NewProjectViewModel {
         defer { isCheckingAgentBackends = false }
 
         let snapshots = await agentRuntime.statusSnapshots()
-        var options = [
-            NewProjectAgentOption(
-                id: .hermes,
-                displayName: "Hermes",
-                detail: "Scarf's existing full-featured agent runtime"
-            )
-        ]
-
-        if let claude = snapshots.first(where: { $0.id == .claudeCode }) {
-            switch claude.status {
-            case .available(let version):
-                let detail: String
-                if let version, !version.isEmpty {
-                    detail = "Claude Code · \(version)"
-                } else {
-                    detail = "Claude Code detected on this Mac"
-                }
-                options.append(
-                    NewProjectAgentOption(
-                        id: .claudeCode,
-                        displayName: "Claude Code",
-                        detail: detail
-                    )
+        let presentation = ProjectAgentPreferencePresenter.make(
+            preferredAgentID: selectedAgentID,
+            probes: snapshots.map { snapshot in
+                ProjectAgentBackendProbe(
+                    id: snapshot.id,
+                    displayName: snapshot.displayName,
+                    executablePath: snapshot.executablePath,
+                    status: snapshot.status
                 )
-                agentAvailabilityNote = nil
-
-            case .notInstalled:
-                agentAvailabilityNote = "Claude Code is not installed or could not be found in the app's executable search paths."
-
-            case .unavailable(let reason):
-                agentAvailabilityNote = "Claude Code is unavailable: \(reason)"
-            }
-        } else if context.isRemote {
-            agentAvailabilityNote = "Claude Code project chat is local-only in this phase; remote windows continue to use Hermes."
-        } else {
-            agentAvailabilityNote = nil
+            },
+            isRemoteContext: context.isRemote
+        )
+        agentOptions = presentation.options.map {
+            NewProjectAgentOption(
+                id: $0.id,
+                displayName: $0.displayName,
+                detail: $0.detail
+            )
         }
-
-        agentOptions = options
-        if !options.contains(where: { $0.id == selectedAgentID }) {
-            selectedAgentID = .hermes
-        }
+        selectedAgentID = presentation.selectedAgentID
+        agentAvailabilityNote = presentation.availabilityNote
     }
 
     // MARK: - Validation
