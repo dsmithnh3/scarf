@@ -34,10 +34,21 @@ jobs:
       - name: Build ScarfCore library
         run: swift build --target ScarfCore
       - name: Build ScarfCore test target
-        # Build only the ScarfCore test target. This keeps the compile gate
-        # isolated from unrelated MCP test products while still proving every
-        # ScarfCore test source compiles against the current shared domain.
+        # Compile the complete legacy/core test target as a compatibility gate.
         run: swift build --target ScarfCoreTests
+
+  multi-agent-tests:
+    name: Multi-Agent Tests
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: scarf/Packages/ScarfCore
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
       - name: Run project agent preference tests
         run: swift test --filter ProjectAgentPreferenceStoreTests
 
