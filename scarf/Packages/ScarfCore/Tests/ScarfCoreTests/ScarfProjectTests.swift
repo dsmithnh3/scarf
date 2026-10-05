@@ -40,6 +40,7 @@ import Foundation
         #expect(decoded.templateLockRef == project.templateLockRef)
         #expect(decoded.hostBindings.count == 1)
         #expect(decoded.hostBindings.first?.serverId == "00000000-0000-0000-0000-000000000001")
+        #expect(decoded.preferredAgentID == .hermes)
         // ISO-8601 dates round-trip to the second.
         #expect(abs(decoded.createdAt.timeIntervalSince(project.createdAt)) < 1)
         #expect(abs(decoded.updatedAt.timeIntervalSince(project.updatedAt)) < 1)
@@ -51,6 +52,7 @@ import Foundation
         let project = ScarfProject(name: "Bare", rootPath: "/tmp/bare")
         #expect(project.scopedToolsets.isEmpty)
         #expect(project.scopedSkills.isEmpty)
+        #expect(project.preferredAgentID == .hermes)
         let data = try JSONEncoder().encode(project)
         let decoded = try JSONDecoder().decode(ScarfProject.self, from: data)
         #expect(decoded.scopedToolsets.isEmpty)
@@ -58,6 +60,7 @@ import Foundation
         #expect(decoded.hostBindings.isEmpty)
         #expect(decoded.board == nil)
         #expect(decoded.templateLockRef == nil)
+        #expect(decoded.preferredAgentID == .hermes)
     }
 
     /// A minimal record carrying only the three required keys must decode
@@ -80,9 +83,32 @@ import Foundation
         #expect(decoded.secretsScope.isEmpty)
         #expect(decoded.modelPresetId == nil)
         #expect(decoded.hostBindings.isEmpty)
+        #expect(decoded.preferredAgentID == .hermes)
     }
 
-    /// Unknown future keys are ignored, not fatal.
+    @Test func preferredClaudeAgentRoundTripsThroughExtraStorage() throws {
+        var project = ScarfProject(name: "Claude Project", rootPath: "/tmp/claude")
+        project.preferredAgentID = .claudeCode
+
+        #expect(project.extra["preferredAgentId"] == .string("claude-code"))
+
+        let data = try JSONEncoder().encode(project)
+        let decoded = try JSONDecoder().decode(ScarfProject.self, from: data)
+        #expect(decoded.preferredAgentID == .claudeCode)
+        #expect(decoded.extra["preferredAgentId"] == .string("claude-code"))
+    }
+
+    @Test func resettingPreferredAgentToHermesRemovesCompatibilityKey() {
+        var project = ScarfProject(name: "Reset", rootPath: "/tmp/reset")
+        project.preferredAgentID = .claudeCode
+        project.preferredAgentID = .hermes
+
+        #expect(project.preferredAgentID == .hermes)
+        #expect(project.extra["preferredAgentId"] == nil)
+    }
+
+    /// Unknown future keys are ignored by the typed model but preserved in
+    /// `extra`, allowing newer and older Scarf builds to share a project.
     @Test func unknownKeysAreIgnored() throws {
         let json = """
         {
@@ -94,5 +120,6 @@ import Foundation
         """
         let decoded = try JSONDecoder().decode(ScarfProject.self, from: Data(json.utf8))
         #expect(decoded.name == "Future")
+        #expect(decoded.extra["someFieldFromTomorrow"] == .object(["nested": .bool(true)]))
     }
 }
