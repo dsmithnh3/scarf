@@ -70,7 +70,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ### Phase 2 — persist backend id + session id
 
-**GREEN for identity persistence + production wiring.** Temp-directory reload boundary proves save → new store instance → load. Controller start/resume persist; close clears; restore resumes the stored backend+session without a second conversation state system. App bootstrap factory `makePersisting(hermesHome:)` writes to the HermesPathSet production location; `AgentRuntime` / `AgentChatViewModel` consume that seam.
+**GREEN for identity persistence + production wiring.** Temp-directory reload boundary proves save → new store instance → load. Controller start/resume persist; close clears; restore resumes the stored backend+session without a second conversation state system. App bootstrap factory `makePersisting(hermesHome:)` writes to the HermesPathSet production location; `AgentRuntime` / `AgentChatViewModel` consume that seam. CI green: [37332041624](https://github.com/dsmithnh3/scarf/actions/runs/37332041624).
 
 Hermes remains the default route. Claude permission capability stays unset.
 
