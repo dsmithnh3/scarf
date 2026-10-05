@@ -177,13 +177,23 @@ public protocol AgentConversationTranscriptPersisting: Sendable {
 /// Callers choose the file URL. Production uses
 /// ``productionFileURL(hermesHome:)`` (aligned with
 /// `HermesPathSet.agentConversationTranscripts`); tests inject a temp
-/// directory so a second store instance proves the reload boundary without
-/// coupling this slice to GuardedJSONStore/transport.
-public struct AgentConversationTranscriptStore: AgentConversationTranscriptPersisting, Sendable {
-    public let fileURL: URL
+/// directory so a second store instance proves the reload boundary.
+///
+/// One store owns this path: all RMW goes through ``GuardedSidecarStore`` /
+/// ``GuardedJSONStore`` (inspect → mutate → publish). Damage policy is
+/// ``GuardedDamagePolicy/refuseForever`` — durable messages/activity must
+/// not be silently rebuilt from empty after corruption.
+public struct AgentConversationTranscriptStore: AgentConversationTranscriptPersisting, GuardedSidecarStore, Sendable {
+    public static let label = "agent_conversation_transcripts.json"
+    public static let maxBytes = 4 * 1024 * 1024
+    public static let damagePolicy = GuardedDamagePolicy.refuseForever
 
-    public init(fileURL: URL) {
+    public let fileURL: URL
+    public nonisolated let transport: any ServerTransport
+
+    public init(fileURL: URL, transport: any ServerTransport = LocalTransport()) {
         self.fileURL = fileURL
+        self.transport = transport
     }
 
     /// Production sidecar under a Hermes home. Keep byte-identical to
@@ -194,18 +204,19 @@ public struct AgentConversationTranscriptStore: AgentConversationTranscriptPersi
     }
 
     /// Convenience for app/bootstrap wiring against a Hermes home directory.
-    public init(hermesHome: String) {
-        self.init(fileURL: Self.productionFileURL(hermesHome: hermesHome))
+    public init(hermesHome: String, transport: any ServerTransport = LocalTransport()) {
+        self.init(fileURL: Self.productionFileURL(hermesHome: hermesHome), transport: transport)
     }
 
     public func save(_ transcript: AgentConversationTranscript) throws {
-        var envelope = try loadEnvelope()
-        var stored = transcript
-        if stored.updatedAt == nil {
-            stored.updatedAt = ISO8601DateFormatter().string(from: Date())
+        try mutate { envelope in
+            var stored = transcript
+            if stored.updatedAt == nil {
+                stored.updatedAt = ISO8601DateFormatter().string(from: Date())
+            }
+            envelope.transcripts[transcript.conversationID] = stored
+            return true
         }
-        envelope.transcripts[transcript.conversationID] = stored
-        try writeEnvelope(envelope)
     }
 
     public func load(conversationID: String) throws -> AgentConversationTranscript? {
@@ -213,9 +224,12 @@ public struct AgentConversationTranscriptStore: AgentConversationTranscriptPersi
     }
 
     public func remove(conversationID: String) throws {
-        var envelope = try loadEnvelope()
-        guard envelope.transcripts.removeValue(forKey: conversationID) != nil else { return }
-        try writeEnvelope(envelope)
+        try mutate { envelope in
+            guard envelope.transcripts.removeValue(forKey: conversationID) != nil else {
+                return false
+            }
+            return true
+        }
     }
 
     private struct Envelope: Codable {
@@ -223,23 +237,28 @@ public struct AgentConversationTranscriptStore: AgentConversationTranscriptPersi
     }
 
     private func loadEnvelope() throws -> Envelope {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: fileURL.path) else {
-            return Envelope(transcripts: [:])
-        }
-        let data = try Data(contentsOf: fileURL)
-        if data.isEmpty {
-            return Envelope(transcripts: [:])
-        }
-        return try JSONDecoder().decode(Envelope.self, from: data)
+        try inspectEnvelope().envelope
     }
 
-    private func writeEnvelope(_ envelope: Envelope) throws {
-        let directory = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    private func inspectEnvelope() throws -> (envelope: Envelope, inspection: GuardedJSONStore.Inspection) {
+        let path = fileURL.path
+        let (inspection, decoded) = inspectDecoding(Envelope.self, at: path)
+        if case .unreadable = inspection.state {
+            throw GuardedStoreError.refusedUnreadableOverwrite(path: path, label: Self.label)
+        }
+        return (decoded ?? Envelope(transcripts: [:]), inspection)
+    }
+
+    /// Single RMW chokepoint: the write validates against the same inspection
+    /// the in-memory envelope was built from.
+    private func mutate(_ body: (inout Envelope) throws -> Bool) throws {
+        let path = fileURL.path
+        var (envelope, inspection) = try inspectEnvelope()
+        let changed = try body(&envelope)
+        guard changed else { return }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(envelope)
-        try data.write(to: fileURL, options: .atomic)
+        try publish(data, to: path, after: inspection)
     }
 }

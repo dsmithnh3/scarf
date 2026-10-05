@@ -159,6 +159,62 @@ struct AgentConversationTranscriptStoreTests {
         let reader = AgentConversationTranscriptStore(fileURL: fileURL)
         #expect(try reader.load(conversationID: "conv-1") == nil)
     }
+
+    @Test("undecodable transcript sidecar refuses overwrite and preserves bytes")
+    func corruptTranscriptRefusesSave() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-agent-transcript-corrupt-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("agent_conversation_transcripts.json")
+        let garbage = Data("{ not-transcript-json".utf8)
+        try garbage.write(to: fileURL)
+
+        let store = AgentConversationTranscriptStore(fileURL: fileURL)
+        #expect(AgentConversationTranscriptStore.damagePolicy == .refuseForever)
+        #expect(throws: GuardedStoreError.refusedUnreadableOverwrite(
+            path: fileURL.path,
+            label: AgentConversationTranscriptStore.label
+        )) {
+            try store.save(
+                AgentConversationTranscript(
+                    conversationID: "conv-1",
+                    messages: [AgentMessage(role: .user, content: "nope")]
+                )
+            )
+        }
+        #expect(try Data(contentsOf: fileURL) == garbage)
+    }
+
+    @Test("transcript overwrite refreshes one-deep bak via guarded publish")
+    func transcriptOverwriteKeepsBak() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-agent-transcript-bak-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("agent_conversation_transcripts.json")
+        let store = AgentConversationTranscriptStore(fileURL: fileURL)
+
+        try store.save(
+            AgentConversationTranscript(
+                conversationID: "conv-1",
+                messages: [AgentMessage(role: .user, content: "first")]
+            )
+        )
+        let firstBytes = try Data(contentsOf: fileURL)
+        try store.save(
+            AgentConversationTranscript(
+                conversationID: "conv-1",
+                messages: [AgentMessage(role: .user, content: "second")]
+            )
+        )
+
+        let bakURL = URL(fileURLWithPath: fileURL.path + ".bak")
+        #expect(FileManager.default.fileExists(atPath: bakURL.path))
+        #expect(try Data(contentsOf: bakURL) == firstBytes)
+        let loaded = try #require(try store.load(conversationID: "conv-1"))
+        #expect(loaded.messages.map(\.content) == ["second"])
+    }
 }
 
 @Suite("Agent conversation controller transcript fidelity")

@@ -51,6 +51,65 @@ struct AgentConversationIdentityStoreTests {
         let reader = AgentConversationIdentityStore(fileURL: fileURL)
         #expect(try reader.load(conversationID: "conv-1") == nil)
     }
+
+    @Test("undecodable identity sidecar refuses overwrite and preserves bytes")
+    func corruptIdentityRefusesSave() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-agent-identity-corrupt-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("agent_conversation_identities.json")
+        let garbage = Data("{ not-identity-json".utf8)
+        try garbage.write(to: fileURL)
+
+        let store = AgentConversationIdentityStore(fileURL: fileURL)
+        #expect(AgentConversationIdentityStore.damagePolicy == .refuseForever)
+        #expect(throws: GuardedStoreError.refusedUnreadableOverwrite(
+            path: fileURL.path,
+            label: AgentConversationIdentityStore.label
+        )) {
+            try store.save(
+                AgentConversationIdentity(
+                    conversationID: "conv-1",
+                    backendID: .hermes,
+                    sessionID: "session-h"
+                )
+            )
+        }
+        #expect(try Data(contentsOf: fileURL) == garbage)
+    }
+
+    @Test("identity overwrite refreshes one-deep bak via guarded publish")
+    func identityOverwriteKeepsBak() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-agent-identity-bak-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("agent_conversation_identities.json")
+        let store = AgentConversationIdentityStore(fileURL: fileURL)
+
+        try store.save(
+            AgentConversationIdentity(
+                conversationID: "conv-1",
+                backendID: .hermes,
+                sessionID: "session-a"
+            )
+        )
+        let firstBytes = try Data(contentsOf: fileURL)
+        try store.save(
+            AgentConversationIdentity(
+                conversationID: "conv-1",
+                backendID: .hermes,
+                sessionID: "session-b"
+            )
+        )
+
+        let bakURL = URL(fileURLWithPath: fileURL.path + ".bak")
+        #expect(FileManager.default.fileExists(atPath: bakURL.path))
+        #expect(try Data(contentsOf: bakURL) == firstBytes)
+        let loaded = try #require(try store.load(conversationID: "conv-1"))
+        #expect(loaded.sessionID == "session-b")
+    }
 }
 
 @Suite("Agent conversation controller identity persistence")

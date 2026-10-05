@@ -80,8 +80,17 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 3 Hermes loaders into catalog (read-only) (`ce4b7232`, tip `fda7fcc8`) — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` wire plugin walk / skill scan / MCP config roster; Claude stub empty; tests in `AgentExtensionCatalogHermesLoaderTests`. Multi-Agent + Compile + macOS [37372242630](https://github.com/dsmithnh3/scarf/actions/runs/37372242630); Claude prior green [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 - Phase 4 generic permission coordinator (model slice) (`261dc822`, test compile fix `db652228`) — `AgentPermissionRecord` + `AgentPermissionCoordinator` in ScarfCore (pending/answered/cancelled queue; Hermes `AgentPermissionRequest` round-trip; Claude `.permissions` still unadvertised). Tests: `AgentPermissionCoordinatorTests`. CI filter includes `AgentPermission`. CI run [37378030823](https://github.com/dsmithnh3/scarf/actions/runs/37378030823) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 4 wire permission coordinator into respond/cancel (`97bf9f63`) — `AgentConversationState` owns `permissionCoordinator`; `permissionRequested` enqueues (Hermes-mapped via `forEvent`); controller `respond`/`cancelPermission` prefer coordinator wire shape then update queue; legacy `permissionRequest` stays FIFO-presented. Claude `.permissions` still unadvertised; no Claude round trip / CLUI UI. Tests: `AgentConversationPermissionWiringTests` (+ state/coordinator coverage). CI run [37380432695](https://github.com/dsmithnh3/scarf/actions/runs/37380432695) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 2 GuardedJSONStore for identity + transcript sidecars — `AgentConversationIdentityStore` and `AgentConversationTranscriptStore` conform to `GuardedSidecarStore` (`refuseForever`, `LocalTransport` default): inspect→mutate→publish RMW, one store per file, one-deep `.bak` on overwrite. Undecodable bytes refuse writes and are quarantined for the human. Claude `can_use_tool` wire encode/decode exists but live round trip remains blocked (`dontAsk`, respond throws, incoming `control_request` not consumed); `.permissions` stays unadvertised. Tests: corrupt-refuse + bak coverage in identity/transcript suites.
 
 ## Current TDD milestone
+
+### Phase 2 — GuardedJSONStore for identity + transcript sidecars
+
+**GREEN for transport-safe RMW on Phase 2 persistence sidecars.** Both stores adopt `GuardedSidecarStore` / `GuardedJSONStore` with `damagePolicy = .refuseForever` (resume identity and durable transcripts must not silently rebuild from empty). Healthy save/load/remove and controller restore paths stay intact; corrupt JSON refuses overwrite and preserves bytes; overwrite refreshes `.bak`. Single store per file (no parallel writer). Hermes remains default. Claude `.permissions` stays unadvertised.
+
+### Phase 4 — Claude permissions still blocked
+
+**BLOCKED for live Claude permission round trip.** Inspected `ClaudeControlProtocol` (verified encode/decode for `can_use_tool` / allow-deny `control_response`), `ClaudeCodeBackend` (incoming stream only handles `control_response`; `respond`/`cancelPermission` still throw `claude.permissions-not-implemented`), and `ClaudeProcessConfiguration` (`--permission-mode dontAsk`). Do **not** advertise `.permissions` until receive → coordinator → answer/cancel → backend wire is tested green. CLUI UI remains out of scope.
 
 ### Phase 4 — wire permission coordinator into respond/cancel
 
@@ -113,7 +122,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ### Phase 2 — Claude structured history (blocked)
 
-**BLOCKED pending a verified protocol or file source.** Inspected `ClaudeCodeBackend`, `ClaudeProcessConfiguration` (`--resume` / `--session-id` only), `ClaudeProcessManager` / `ProcessACPChannel` (stream-json send/receive), and `ClaudeStreamDecoder` (live event lines only). `fetchConversationHistory` correctly returns `[]` with an explicit comment that Scarf has no verified structured transcript API. Do **not** invent session-file parsers or advertise a history capability. Scarf durable transcripts remain preferred on Claude restore. Optional alternative later: GuardedJSONStore for identity/transcript sidecars.
+**BLOCKED pending a verified protocol or file source.** Inspected `ClaudeCodeBackend`, `ClaudeProcessConfiguration` (`--resume` / `--session-id` only), `ClaudeProcessManager` / `ProcessACPChannel` (stream-json send/receive), and `ClaudeStreamDecoder` (live event lines only). `fetchConversationHistory` correctly returns `[]` with an explicit comment that Scarf has no verified structured transcript API. Do **not** invent session-file parsers or advertise a history capability. Scarf durable transcripts remain preferred on Claude restore. GuardedJSONStore for identity/transcript sidecars is done (see above).
 
 ### Phase 2 — fixture state.db end-to-end restore
 
@@ -180,10 +189,10 @@ Claude process cleanup is locked without a production change. Conversation close
 ## Next lifecycle milestones
 
 1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
-2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
+2. ~~Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.~~ **Done** — both stores are `GuardedSidecarStore` with `refuseForever`.
 3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI). Multi-Agent Tests [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 4. ~~Integrate Hermes skills/plugins/MCP read-only into the catalog.~~ **Done** — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call `HermesPluginDirectoryScanner`, `SkillsScanner`, and a lightweight config.yaml MCP roster; Claude skill catalog stays empty; no UI. Tests: `AgentExtensionCatalogHermesLoaderTests`. Commits `ce4b7232` / `fda7fcc8`. Multi-Agent+Compile+macOS [37372242630](https://github.com/dsmithnh3/scarf/actions/runs/37372242630); Claude prior [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
-5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next clear slice: Claude `can_use_tool` round trip **before** advertising `.permissions` (Hermes respond/cancel wiring is done). Optional: GuardedJSONStore for identity/transcript sidecars.
+5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next clear slice: Claude `can_use_tool` round trip **before** advertising `.permissions` (wire encode/decode exists; receive/respond path + leave `dontAsk` until green).
 
 ## macOS-CLUI-CC adoption analysis
 
