@@ -78,7 +78,9 @@ Session-isolation tests now wait for deterministic state conditions instead of r
 
 ### Current lifecycle TDD milestone
 
-The current RED regression demonstrates that starting a replacement session can leave the previous active backend session open. The next production change must close/release the previous session deterministically while preserving Hermes semantics.
+Replacement-session cleanup is GREEN on `cursor/session-lifecycle-hardening-89c0`. Starting or resuming a different session closes the previous active session. Late scoped events from the replaced session do not modify the new one. After `close()`, scoped and legacy unscoped events do not mutate or resurrect the conversation. Hermes remains the default, and Claude permissions stay unadvertised.
+
+The adoption strategy in this document is unchanged.
 
 Relevant recent commits:
 
@@ -87,6 +89,11 @@ Relevant recent commits:
 - `9cbdb9b` — deterministic session-isolation test.
 - `cfdc588` — RED replacement-session cleanup test.
 - `830f55f` — updated multi-agent roadmap and initial CLUI adoption analysis.
+- `3d7c5c81` — close the previous session before creating a replacement.
+- `bbbc5e11` — lock late scoped events after replacement.
+- `83cf7bfa` — close the previous session when resume switches identity.
+- `e5de0682` — ignore events after close, including unscoped legacy events.
+- `568f1366` — rapid replacements close each outgoing session.
 
 ---
 
@@ -584,15 +591,15 @@ Each can be evaluated independently after multi-agent foundations are stable.
 
 ### Phase 1 — finish Claude Code foundation
 
-- [ ] Make replacement-session cleanup GREEN.
-- [ ] Verify Hermes behavior remains unchanged.
-- [ ] Add late-event-after-switch regression coverage.
-- [ ] Add late-event-after-close regression coverage.
-- [ ] Harden Claude cancel/close/process cleanup.
+- [x] Make replacement-session cleanup GREEN.
+- [x] Verify Hermes routing remains the default and resume-to-Hermes closes the previous backend session.
+- [x] Add late-event-after-switch regression coverage.
+- [x] Add late-event-after-close regression coverage, including unscoped legacy events.
+- [ ] Harden Claude cancel/close/process cleanup with an app-target test. Process-manager replacement close already exists; this environment cannot compile the macOS target.
 - [ ] Add Claude installation/version diagnostics.
-- [ ] Audit resume/session identity fidelity.
-- [ ] Audit Claude event normalization against CLUI.
-- [ ] Audit capability flags.
+- [ ] Audit resume/session identity fidelity beyond controller cleanup.
+- [ ] Audit Claude event normalization against CLUI. The reference repository was not readable here.
+- [ ] Audit capability flags. Permissions remain explicitly unsupported.
 
 ### Phase 2 — sessions and provider semantics
 
@@ -782,7 +789,7 @@ The key architectural rule is consistent throughout:
 
 ## 23. Immediate next action
 
-Return to the current lifecycle RED test introduced by `cfdc588`. Implement the minimum correct replacement-session cleanup in `AgentConversationController`, verify the targeted test becomes GREEN, run all three CI gates, and commit. Then begin the code-level CLUI audit in this order:
+Controller lifecycle cleanup for replacement, resume, and close is GREEN in `AgentConversationController` (see the commits listed in section 2). The adoption order below is unchanged. Next, run the three multi-agent CI gates on this branch, then continue the code-level CLUI audit in this order:
 
 1. Claude provider/event normalization;
 2. session models/persistence/tool merging;

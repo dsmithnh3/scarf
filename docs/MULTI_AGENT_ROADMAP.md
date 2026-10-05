@@ -52,29 +52,33 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - `a6d6dab` — hardened routed event delivery under burst load.
 - `c8002fe` — added lossless 2,048-event burst regression coverage. CI run 37303356088 passed all three gates.
 - `9cbdb9b` — made session-isolation testing deterministic. CI run 37306053532 passed macOS App Build, Multi-Agent Tests, and ScarfCore Compile Gate.
-- `cfdc588` — RED TDD regression requiring replacement sessions to close the prior active session. CI run 37307337357 failed only the new expected lifecycle assertion while the macOS build and compile gate passed. This is the current implementation point.
+- `cfdc588` — RED TDD regression requiring replacement sessions to close the prior active session. CI run 37307337357 failed only the new expected lifecycle assertion while the macOS build and compile gate passed.
+- `3d7c5c81` — GREEN. `AgentConversationController.startSession` closes the previous active session before creating the replacement. A failed close leaves that session active and does not create another one. After a successful close, the controller drops the outgoing session before creation, so a later creation failure claims neither session.
+- `bbbc5e11` — regression: a scoped late event from the replaced session cannot modify the replacement. Session-id filtering already enforced this; the test locks it.
+- `83cf7bfa` — resume closes the previous session only when the resumed identity differs (other session id, other backend, or an id minted by resume). Resuming the active identity does not close it. A failed close keeps the previous session active and releases the resumed session.
+- `e5de0682` — after `close()`, scoped and legacy unscoped events are ignored. A late `sessionStarted` cannot resurrect the conversation. Active legacy backends still receive unscoped events.
+- `568f1366` — rapid sequential replacements close each outgoing session and leave only the last one active.
 
 ## Current TDD milestone
 
-### Replacement-session cleanup
+### Replacement and close lifecycle
 
-**RED confirmed.** Starting a replacement session currently leaves the previous active backend session open.
+**GREEN for the controller lifecycle covered above.** `replacementSessionClosesPrevious` now passes because the previous active session is closed before the replacement is created.
 
-Next production change:
+Failure semantics:
 
-1. Before installing a newly created/resumed active session, close the previous active session when one exists and it is being replaced.
-2. Preserve the existing Hermes route and backend semantics.
-3. Define failure semantics deliberately: a failed cleanup must not leave the controller claiming an ambiguous active session.
-4. Re-run the replacement-session test and all multi-agent gates.
-5. Commit only after GREEN verification.
+- `startSession`: close the outgoing session before creating the next one. Close failure keeps the outgoing session and does not create a replacement. Successful close followed by a failed create claims neither session.
+- `resumeSession`: resume first, then close the outgoing session only if the effective identity changed. Close failure keeps the outgoing session and attempts to release the resumed session.
+- `close()`: clear both the active session and the active backend id. Later events, including unscoped legacy events, do not mutate state.
+
+Hermes remains the default route. Claude permission capability stays unset.
 
 ## Next lifecycle milestones
 
-1. Reject late scoped events from a previous session after switching to a new session.
-2. Reject late unscoped legacy events after an explicit close without breaking Hermes compatibility.
-3. Harden cancel/close/process termination semantics for Claude Code.
-4. Test rapid start/resume/switch/close races and multi-window operation.
-5. Add lifecycle observability/diagnostics where backend process failures need to surface in UI state.
+1. Prove Claude Code `close`/`cancel` releases the process channel with an app-target test. `ClaudeProcessManager` already closes the previous channel on replacement and `ClaudeCodeBackend.close` cancels stream tasks and closes the manager; this VM cannot compile the macOS app target.
+2. Add lifecycle observability where backend process failures need to surface in UI state.
+3. Audit Claude event normalization against macOS-CLUI-CC once that repository is readable. It was not accessible from this environment.
+4. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -183,12 +187,15 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 
 ### Phase 1 — finish Claude Code foundation
 
-- GREEN replacement-session cleanup.
-- Late-event and closed-session isolation.
-- Process cancel/close cleanup.
-- Claude Code installation/version diagnostics.
-- Session resume/history fidelity.
-- Capability contract audit.
+- [x] GREEN replacement-session cleanup (`3d7c5c81`, test `replacementSessionClosesPrevious`).
+- [x] Late scoped events after a switch (`bbbc5e11`).
+- [x] Late scoped and unscoped events after close (`e5de0682`).
+- [x] Resume replacement cleanup, including a minted session id and a backend switch (`83cf7bfa`).
+- [x] Rapid sequential replacements (`568f1366`).
+- [ ] App-target proof that Claude close/cancel releases the process. The process manager already closes a replaced channel; Linux cannot compile that target.
+- [ ] Claude Code installation/version diagnostics.
+- [ ] Session resume/history fidelity beyond identity cleanup.
+- [ ] Capability contract audit. Claude permissions remain unimplemented and unadvertised.
 
 ### Phase 2 — adopt high-value CLUI patterns
 
