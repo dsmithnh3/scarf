@@ -105,7 +105,9 @@ struct AgentPermissionCoordinatorTests {
         #expect(coordinator.presented?.id == "1")
         #expect(coordinator.presented?.description == "first")
 
-        #expect(coordinator.answer(id: "1", optionID: "allow_once"))
+        // Mutating calls stay outside `#expect` (macro captures are immutable).
+        let answeredFirst = coordinator.answer(id: "1", optionID: "allow_once")
+        #expect(answeredFirst)
         #expect(coordinator.pending.map(\.id) == ["2"])
         #expect(coordinator.presented?.id == "2")
         #expect(coordinator.records.first { $0.id == "1" }?.status == .answered)
@@ -122,12 +124,14 @@ struct AgentPermissionCoordinatorTests {
             AgentPermissionRecord.hermes(from: hermesRequest(id: "11", title: "second"), sessionID: "s")
         )
 
-        #expect(coordinator.answer(id: "11", optionID: "deny"))
+        let answeredSecond = coordinator.answer(id: "11", optionID: "deny")
+        #expect(answeredSecond)
         #expect(coordinator.pending.map(\.id) == ["10"])
         #expect(coordinator.records.first { $0.id == "11" }?.status == .answered)
         #expect(coordinator.records.first { $0.id == "11" }?.selectedOptionID == "deny")
 
-        #expect(coordinator.cancel(id: "10"))
+        let cancelledFirst = coordinator.cancel(id: "10")
+        #expect(cancelledFirst)
         #expect(coordinator.pending.isEmpty)
         #expect(coordinator.records.first { $0.id == "10" }?.status == .cancelled)
         #expect(coordinator.records.first { $0.id == "10" }?.selectedOptionID == nil)
@@ -158,13 +162,17 @@ struct AgentPermissionCoordinatorTests {
             AgentPermissionRecord.hermes(from: hermesRequest(id: "2", title: "second"), sessionID: "s")
         )
 
-        #expect(coordinator.answer(id: "1", optionID: "allow_once"))
-        #expect(!coordinator.answer(id: "1", optionID: "deny"))
+        let answeredOnce = coordinator.answer(id: "1", optionID: "allow_once")
+        let answeredAgain = coordinator.answer(id: "1", optionID: "deny")
+        #expect(answeredOnce)
+        #expect(!answeredAgain)
         #expect(coordinator.presented?.id == "2")
         #expect(coordinator.pending.count == 1)
 
-        #expect(coordinator.cancel(id: "2"))
-        #expect(!coordinator.cancel(id: "2"))
+        let cancelledOnce = coordinator.cancel(id: "2")
+        let cancelledAgain = coordinator.cancel(id: "2")
+        #expect(cancelledOnce)
+        #expect(!cancelledAgain)
         #expect(coordinator.pending.isEmpty)
     }
 
@@ -175,7 +183,8 @@ struct AgentPermissionCoordinatorTests {
             AgentPermissionRecord.hermes(from: hermesRequest(id: "1"), sessionID: "s")
         )
 
-        #expect(!coordinator.answer(id: "1", optionID: "not-a-real-option"))
+        let rejected = coordinator.answer(id: "1", optionID: "not-a-real-option")
+        #expect(!rejected)
         #expect(coordinator.presented?.status == .pending)
         #expect(coordinator.presented?.selectedOptionID == nil)
     }
@@ -189,7 +198,8 @@ struct AgentPermissionCoordinatorTests {
         coordinator.record(
             AgentPermissionRecord.hermes(from: hermesRequest(id: "2", title: "open"), sessionID: "s")
         )
-        #expect(coordinator.answer(id: "1", optionID: "deny"))
+        let answered = coordinator.answer(id: "1", optionID: "deny")
+        #expect(answered)
 
         coordinator.clearPending()
         #expect(coordinator.pending.isEmpty)
