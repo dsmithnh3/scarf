@@ -421,6 +421,138 @@ struct AgentConversationControllerTests {
         #expect((await controller.stateSnapshot()).isClosed == false)
     }
 
+    @Test("failed session creation surfaces conversation error without claiming a session")
+    func failedCreationSurfacesConversationError() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = FailingLaunchBackend(failCreate: true)
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        do {
+            _ = try await controller.startSession(
+                backendID: .claudeCode,
+                configuration: AgentSessionConfiguration()
+            )
+            Issue.record("Expected createSession failure")
+        } catch let error as AgentError {
+            #expect(error.code == "backend.launch-failed")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let state = await controller.stateSnapshot()
+        #expect(state.session == nil)
+        #expect(state.error?.code == "conversation.start-failed")
+        #expect(state.error?.isRecoverable == true)
+    }
+
+    @Test("failed resume surfaces conversation error and keeps the prior session")
+    func failedResumeSurfacesConversationError() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = FailingLaunchBackend(failCreate: false, failResume: true)
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+        let session = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+
+        do {
+            _ = try await controller.resumeSession(
+                AgentSession(id: "other", backendID: .claudeCode, workingDirectory: nil)
+            )
+            Issue.record("Expected resumeSession failure")
+        } catch let error as AgentError {
+            #expect(error.code == "backend.resume-failed")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let state = await controller.stateSnapshot()
+        #expect(state.session?.id == session.id)
+        #expect(state.error?.code == "conversation.resume-failed")
+        #expect(state.error?.isRecoverable == true)
+    }
+
+    @Test("backend process failure events surface in conversation state")
+    func processFailureEventSurfacesInConversationState() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = ScopedRecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+        let session = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration(metadata: ["testSessionID": "session-a"])
+        )
+
+        let errored = Task<AgentConversationState?, Never> {
+            for await state in controller.stateUpdates {
+                if state.error?.code == "claude.process-ended" { return state }
+            }
+            return nil
+        }
+        await backend.emit(
+            .error(AgentError(
+                code: "claude.process-ended",
+                message: "Claude Code process ended unexpectedly",
+                isRecoverable: true
+            )),
+            sessionID: session.id
+        )
+        let state = try #require(await errored.value)
+        #expect(state.error?.code == "claude.process-ended")
+        #expect(state.error?.isRecoverable == true)
+        #expect(state.session?.id == session.id)
+        #expect(!state.isClosed)
+    }
+
+    private actor FailingLaunchBackend: AgentBackend {
+        nonisolated let id: AgentID = .claudeCode
+        nonisolated let displayName = "Failing Launch"
+        nonisolated let capabilities: AgentCapabilities = [.streaming, .sessions, .resume]
+        nonisolated let events: AsyncStream<AgentEvent>
+        private let continuation: AsyncStream<AgentEvent>.Continuation
+        private let failCreate: Bool
+        private let failResume: Bool
+        private var nextSessionNumber = 0
+
+        init(failCreate: Bool, failResume: Bool = false) {
+            self.failCreate = failCreate
+            self.failResume = failResume
+            var continuation: AsyncStream<AgentEvent>.Continuation!
+            events = AsyncStream { continuation = $0 }
+            self.continuation = continuation
+        }
+
+        nonisolated func installationStatus() async -> AgentInstallationStatus { .available(version: nil) }
+        nonisolated func models() async throws -> [AgentModel] { [] }
+
+        func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
+            if failCreate {
+                throw AgentError(code: "backend.launch-failed", message: "launch failed", isRecoverable: true)
+            }
+            nextSessionNumber += 1
+            return AgentSession(
+                id: "session-\(nextSessionNumber)",
+                backendID: id,
+                workingDirectory: configuration.workingDirectory
+            )
+        }
+
+        func resumeSession(_ session: AgentSession) async throws -> AgentSession {
+            if failResume {
+                throw AgentError(code: "backend.resume-failed", message: "resume failed", isRecoverable: true)
+            }
+            return session
+        }
+
+        func send(_ message: AgentMessage, in session: AgentSession) async throws {}
+        func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws {}
+        func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws {}
+        func cancel(session: AgentSession) async {}
+        func close(session: AgentSession) async {}
+    }
+
     private actor RemintingBackend: AgentBackend {
         nonisolated let id: AgentID = .claudeCode
         nonisolated let displayName = "Reminting"

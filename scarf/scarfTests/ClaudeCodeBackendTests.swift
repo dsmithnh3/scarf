@@ -180,6 +180,21 @@ struct ClaudeCodeBackendTests {
         }
     }
 
+    @Test("unexpected Claude process exit surfaces conversation error state")
+    func unexpectedProcessExitSurfacesConversationError() async throws {
+        try await ClaudeProcessLifecycleProbe.withSession(
+            script: ClaudeProcessLifecycleProbe.exitAfterReadyScript
+        ) { probe in
+            let ready = try await probe.nextText()
+            #expect(ready == "ready")
+
+            let state = try await probe.waitForState { $0.error?.code == "claude.process-ended" }
+            #expect(state.error?.code == "claude.process-ended")
+            #expect(state.error?.isRecoverable == true)
+            #expect(!state.isClosed)
+        }
+    }
+
     @Test("closing the conversation terminates the Claude Code process")
     func conversationCloseTerminatesClaudeProcess() async throws {
         try await ClaudeProcessLifecycleProbe.withSession { probe in
@@ -464,6 +479,30 @@ private final class ClaudeProcessLifecycleProbe {
             emit("interrupted")
         elif '"type":"user"' in line:
             emit("ack")
+    os.close(fifo)
+    log.write("exit\\n")
+    """
+
+    /// Emits one text frame then exits so the stdout stream ends while the
+    /// backend still tracks the runtime — the unexpected-exit error path.
+    static let exitAfterReadyScript = """
+    #!/usr/bin/python3
+    import json, os, sys
+
+    fifo = os.open(os.environ["SCARF_CLAUDE_LIFECYCLE_FIFO"], os.O_WRONLY)
+    log = open(os.environ["SCARF_CLAUDE_LIFECYCLE_LOG"], "w", buffering=1)
+    log.write("pid %s\\n" % os.getpid())
+
+    frame = {
+        "type": "stream_event",
+        "event": {
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": "ready"},
+        },
+    }
+    sys.stdout.write(json.dumps(frame, separators=(",", ":")) + "\\n")
+    sys.stdout.flush()
+    log.write("emit ready\\n")
     os.close(fifo)
     log.write("exit\\n")
     """

@@ -78,14 +78,17 @@ Hermes remains the default route. Claude permission capability stays unset.
 
 Claude process cleanup is locked without a production change. Conversation close terminates the Claude process. Turn cancel sends a control interrupt and does not terminate that process.
 
-**CI gap (in progress):** those process tests live in `scarf/scarfTests` and were not executed by Multi-Agent Tests (ScarfCore filter) or macOS App Build. A dedicated `Claude Process Tests` job runs `xcodebuild test -only-testing:scarfTests/ClaudeCodeBackendTests` on macOS so close/cancel process release cannot regress silently.
+**CI gate:** `Claude Process Tests` runs `xcodebuild test -only-testing:scarfTests/ClaudeCodeBackendTests` on macOS. scarfTests compile required fixing `#require` usage around throwing Claude control decoders under Xcode 26.6.
+
+**Identity:** Claude `system` init that reports a divergent `session_id` is aligned to Scarf's runtime session id; the reported id is kept in `metadata["claudeReportedSessionID"]` so scoped routing cannot be orphaned.
+
+**Process failures:** Failed create/resume now write `conversation.start-failed` / `conversation.resume-failed` into the existing `AgentConversationState.error` slot. Unexpected process exit continues to emit `claude.process-ended` through the same error path (locked by controller + Claude process tests). macOS-CLUI-CC remains unreadable in this environment, so event-normalization ports are deferred.
 
 ## Next lifecycle milestones
 
-1. Land the Claude Process Tests CI gate and confirm it executes the close/cancel cases.
-2. Audit Claude installation/version diagnostics, resume identity, event normalization (CLUI if readable), and capability honesty.
-3. Surface backend process failures (failed launch / unexpected exit / broken stream) in `AgentConversationState` via the existing error path.
-4. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
+1. Confirm Claude Process Tests CI is green on the latest head (close/cancel + identity + unexpected-exit cases).
+2. Begin Phase 2 persistence foundations: persist backend id + session id (smallest TDD slice).
+3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -200,10 +203,12 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Resume replacement cleanup, including a minted session id and a backend switch (`83cf7bfa`).
 - [x] Rapid sequential replacements (`568f1366`).
 - [x] Claude close/cancel process release (`a1234f23`). Behavior was already present. Close terminates the process (`conversationCloseTerminatesClaudeProcess`). Cancel interrupts the turn and leaves the process alive (`turnCancelInterruptsClaudeWithoutTerminatingProcess`).
-- [x] Claude Process Tests CI gate (`9389a29a`). `xcodebuild test -only-testing:scarfTests/ClaudeCodeBackendTests` on macOS.
-- [ ] Claude Code installation/version diagnostics (probe/create/resume not-installed + home PATH coverage in progress).
-- [ ] Session resume identity: keep Scarf routing id when Claude system init reports a divergent `session_id` (in progress).
-- [ ] Capability contract audit. Claude permissions remain unimplemented and unadvertised.
+- [x] Claude Process Tests CI gate (`9389a29a` + scarfTests compile fixes). `xcodebuild test -only-testing:scarfTests/ClaudeCodeBackendTests` on macOS.
+- [x] Claude Code installation/version diagnostics gaps: unavailable probe, create/resume not-installed, home PATH discovery, missing → nil.
+- [x] Session resume identity: Scarf routing id wins when Claude system init reports a divergent `session_id`; resume-of-active keeps identity.
+- [x] Capability contract audit. Claude permissions remain unimplemented and unadvertised (respond + cancelPermission).
+- [x] Process failure surfacing via existing `AgentConversationState.error` (failed create/resume + unexpected exit).
+- [ ] Session resume/history fidelity beyond identity cleanup (Phase 2 persistence).
 
 ### Phase 2 — adopt high-value CLUI patterns
 

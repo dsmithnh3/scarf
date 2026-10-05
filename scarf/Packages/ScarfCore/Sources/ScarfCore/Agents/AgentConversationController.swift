@@ -54,10 +54,21 @@ public actor AgentConversationController {
         // release. A successful close drops the outgoing session before
         // creation; if creation then fails, the controller claims neither.
         try await retireActiveSessionForReplacement()
-        let session = try await coordinator.createSession(
-            backendID: backendID,
-            configuration: configuration
-        )
+        let session: AgentSession
+        do {
+            session = try await coordinator.createSession(
+                backendID: backendID,
+                configuration: configuration
+            )
+        } catch {
+            // Launch/create failures use the same conversation error slot as
+            // stream/process failures so UI has one recovery path.
+            surfaceConversationError(
+                code: "conversation.start-failed",
+                underlying: error
+            )
+            throw error
+        }
         activeBackendID = backendID
         activeSession = session
         state = AgentConversationState()
@@ -69,7 +80,16 @@ public actor AgentConversationController {
     @discardableResult
     public func resumeSession(_ session: AgentSession) async throws -> AgentSession {
         await ensureEventLoop()
-        let resumed = try await coordinator.resumeSession(session)
+        let resumed: AgentSession
+        do {
+            resumed = try await coordinator.resumeSession(session)
+        } catch {
+            surfaceConversationError(
+                code: "conversation.resume-failed",
+                underlying: error
+            )
+            throw error
+        }
         // Close only after resume returns the effective identity. Backends may
         // keep the requested id or mint a new one; the active session is
         // released only when that identity actually changes. A failed close
@@ -80,6 +100,10 @@ public actor AgentConversationController {
                 try await retireActiveSessionForReplacement()
             } catch {
                 try? await coordinator.close(session: resumed)
+                surfaceConversationError(
+                    code: "conversation.resume-failed",
+                    underlying: error
+                )
                 throw error
             }
         }
@@ -228,6 +252,25 @@ public actor AgentConversationController {
 
     private func publishState() {
         stateContinuation.yield(state)
+    }
+
+    private func surfaceConversationError(code: String, underlying: Error) {
+        let message: String
+        if let agentError = underlying as? AgentError {
+            message = agentError.message
+        } else {
+            message = String(describing: underlying)
+        }
+        state.apply(
+            .error(
+                AgentError(
+                    code: code,
+                    message: message,
+                    isRecoverable: true
+                )
+            )
+        )
+        publishState()
     }
 
     private func resumeRoutedSequenceWaiters() {
