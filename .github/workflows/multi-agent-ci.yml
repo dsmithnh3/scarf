@@ -59,7 +59,10 @@ jobs:
             -resolvePackageDependencies \
             -project scarf/scarf.xcodeproj
       - name: Build Scarf Debug app
+        shell: bash
         run: |
+          set +e
+          mkdir -p build
           xcodebuild \
             -project scarf/scarf.xcodeproj \
             -scheme scarf \
@@ -72,4 +75,20 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY='' \
             DEVELOPMENT_TEAM='' \
-            build
+            build > build/xcodebuild.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo '::group::Filtered xcodebuild diagnostics'
+            grep -nE 'error:|fatal error:|SwiftCompile|CompileSwift|\*\* BUILD FAILED \*\*' build/xcodebuild.log | tail -n 240 || true
+            echo '::endgroup::'
+            exit "$status"
+          fi
+          tail -n 40 build/xcodebuild.log
+      - name: Upload xcodebuild log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-xcodebuild-log
+          path: build/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
