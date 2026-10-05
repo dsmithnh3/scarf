@@ -36,10 +36,12 @@ enum ClaudeProcessConfiguration {
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
-            // Host can_use_tool allow/deny wire exists, but keep dontAsk until a
-            // verified Claude launch mode that prompts the host is confirmed.
-            // Advertising `.permissions` while dontAsk is active would overclaim.
-            "--permission-mode", "dontAsk",
+            // Verified host-prompting launch (Agent SDK canUseTool path):
+            // `--permission-mode default` emits prompts; `dontAsk` never does.
+            // `--permission-prompt-tool stdio` routes them over stream-json
+            // control_request / can_use_tool (same flags the Agent SDK pushes).
+            "--permission-mode", "default",
+            "--permission-prompt-tool", "stdio",
         ]
 
         if configuration.resume {

@@ -6,7 +6,8 @@ import Testing
 ///
 /// Preserves Hermes ACP permission identity (`AgentPermissionRequest` numeric
 /// ids + options) and queue semantics from Rich Chat, without advertising
-/// Claude `.permissions` or inventing a Claude round trip.
+/// Claude `.permissions` is advertised once host-prompting launch + round trip
+/// are verified; this suite covers the coordinator model, not CLUI UI.
 @Suite("Agent permission coordinator")
 struct AgentPermissionCoordinatorTests {
 
@@ -98,15 +99,15 @@ struct AgentPermissionCoordinatorTests {
         #expect(claudeRecord.category == "execute")
     }
 
-    @Test("Hermes capabilities include permissions; Claude default capabilities do not")
-    func capabilityGatePreservesHermesOmitsClaude() {
+    @Test("Hermes and Claude default capabilities both include permissions once host bridge is verified")
+    func capabilityGateIncludesHermesAndClaude() {
         let hermesCaps = AgentSlashHintPresenter.defaultCapabilities(for: .hermes)
         let claudeCaps = AgentSlashHintPresenter.defaultCapabilities(for: .claudeCode)
 
         #expect(AgentPermissionCoordinator.supportsPermissions(hermesCaps))
-        #expect(!AgentPermissionCoordinator.supportsPermissions(claudeCaps))
+        #expect(AgentPermissionCoordinator.supportsPermissions(claudeCaps))
         #expect(hermesCaps.contains(.permissions))
-        #expect(!claudeCaps.contains(.permissions))
+        #expect(claudeCaps.contains(.permissions))
     }
 
     // MARK: - Queue / state machine
@@ -229,10 +230,10 @@ struct AgentPermissionCoordinatorTests {
 
     // MARK: - Claude guardrails
 
-    @Test("coordinator can record a Claude-shaped pending row without advertising permissions capability")
-    func canRecordClaudeShapedRowWithoutAdvertisingCapability() {
-        // Model may track future Claude control requests; capability stays false
-        // until a verified round trip exists (ClaudeCodeBackend still throws).
+    @Test("coordinator records Claude-shaped pending rows when permissions capability is advertised")
+    func canRecordClaudeShapedRowWithPermissionsCapability() {
+        // Host-prompting launch + can_use_tool round trip are verified; Claude
+        // default capabilities now include `.permissions`.
         let record = AgentPermissionRecord(
             id: "scarf_req_abc",
             backendID: .claudeCode,
@@ -253,7 +254,7 @@ struct AgentPermissionCoordinatorTests {
 
         #expect(coordinator.presented?.backendID == .claudeCode)
         #expect(coordinator.presented?.category == "can_use_tool")
-        #expect(!AgentPermissionCoordinator.supportsPermissions(
+        #expect(AgentPermissionCoordinator.supportsPermissions(
             AgentSlashHintPresenter.defaultCapabilities(for: .claudeCode)
         ))
     }

@@ -55,8 +55,11 @@ struct AgentSlashHintPresenterTests {
         #expect(bare.hints.map(\.name).contains("scarf-help"))
         #expect(!bare.hints.map(\.name).contains("compress"))
         #expect(!bare.hints.map(\.name).contains("steer"))
+        // No Hermes ACP "permissions" slash — Claude catalog stays empty; Scarf
+        // local has no permissions-gated slash. Capability is advertised because
+        // the host can_use_tool bridge is live.
         #expect(!bare.hints.map(\.name).contains("permissions"))
-        #expect(!claudeCaps.contains(.permissions))
+        #expect(claudeCaps.contains(.permissions))
         #expect(!claudeCaps.contains(.cron))
         #expect(!bare.hints.map(\.name).contains("scarf-cron"))
     }

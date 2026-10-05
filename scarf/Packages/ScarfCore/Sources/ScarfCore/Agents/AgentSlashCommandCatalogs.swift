@@ -220,8 +220,8 @@ public enum AgentSlashCommandCatalogs: Sendable {
     ///
     /// Empty until Scarf verifies a structured discovery path or that literal
     /// slash text is interpreted correctly through `ClaudeCodeBackend`'s
-    /// stream-json channel. Do not invent CLI menus here; permissions remain
-    /// unadvertised.
+    /// stream-json channel. Do not invent CLI menus here; capability
+    /// advertisement for host permissions lives on `ClaudeCodeBackend`.
     public static let claudeCode: [AgentSlashCommandDescriptor] = []
 
     /// Production merge order: Scarf-local first (shadows backend duplicates),

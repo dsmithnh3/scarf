@@ -145,6 +145,7 @@ jobs:
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath build/DerivedData-claude-process \
             -only-testing:scarfTests/ClaudeCodeBackendTests \
+            -only-testing:scarfTests/ClaudeProcessConfigurationTests \
             -skipPackagePluginValidation \
             ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
@@ -162,6 +163,11 @@ jobs:
           # Fail closed if the suite never executed (empty filter / host miss).
           if ! grep -qE 'ClaudeCodeBackendTests|Claude Code agent backend' build/claude-process-tests.log; then
             echo 'ClaudeCodeBackendTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'ClaudeProcessConfigurationTests|Claude Code process configuration' build/claude-process-tests.log; then
+            echo 'ClaudeProcessConfigurationTests did not appear in xcodebuild output'
             tail -n 80 build/claude-process-tests.log
             exit 1
           fi

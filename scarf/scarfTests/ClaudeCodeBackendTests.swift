@@ -30,12 +30,68 @@ struct ClaudeCodeBackendTests {
         #expect(capabilities.contains(.usage))
         #expect(capabilities.contains(.fileChanges))
         #expect(capabilities.contains(.shellCommands))
-        // Host allow/deny wire exists, but launch still uses dontAsk and real
-        // Claude prompting is unverified — keep .permissions unadvertised.
-        #expect(!capabilities.contains(.permissions))
+        // Host-prompting launch (`default` + `--permission-prompt-tool stdio`)
+        // plus receive/answer round trip justify advertising `.permissions`.
+        #expect(capabilities.contains(.permissions))
         #expect(!capabilities.contains(.cron))
         #expect(!capabilities.contains(.gateway))
         #expect(!capabilities.contains(.proxy))
+    }
+
+    @Test("host-prompting launch mode plus receive/answer round trip justifies .permissions")
+    func hostPromptingModeJustifiesPermissionsCapability() async throws {
+        // 1) Launch args must use the verified host-prompting flags.
+        let launch = ClaudeLaunchConfiguration(
+            executable: "/tmp/claude",
+            workingDirectory: URL(fileURLWithPath: "/tmp/project"),
+            sessionID: "33333333-3333-4333-8333-333333333333"
+        )
+        let arguments = ClaudeProcessConfiguration.command(for: launch).arguments
+        #expect(arguments.contains("--permission-mode"))
+        #expect(arguments.contains("default"))
+        #expect(arguments.contains("--permission-prompt-tool"))
+        #expect(arguments.contains("stdio"))
+        #expect(!arguments.contains("dontAsk"))
+
+        // 2) Backend both receives can_use_tool and answers allow under that mode.
+        let channel = PermissionMockChannel()
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/tmp/claude" },
+            installationProbe: { _ in .available(version: "host-prompt") },
+            environmentProvider: { [:] },
+            channelFactory: { _, _ in channel }
+        )
+        #expect(backend.capabilities.contains(.permissions))
+
+        let collector = PermissionEventCollector()
+        let collectTask = Task { await collector.consume(backend.events) }
+
+        let session = try await backend.createSession(
+            configuration: AgentSessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true)
+            )
+        )
+
+        let permissionLine = #"{"type":"control_request","request_id":"req_host","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/a.txt","content":"hello"}}}"#
+        await channel.emit(permissionLine)
+
+        let request = try await collector.nextPermission()
+        #expect(request.id == "req_host")
+        #expect(request.detail == "can_use_tool")
+
+        try await backend.respond(to: request, optionID: "allow", in: session)
+
+        let sent = try await channel.waitForSentCount(1)
+        let data = try #require(sent[0].data(using: .utf8))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["type"] as? String == "control_response")
+        let outer = try #require(json["response"] as? [String: Any])
+        #expect(outer["request_id"] as? String == "req_host")
+        let response = try #require(outer["response"] as? [String: Any])
+        #expect(response["behavior"] as? String == "allow")
+
+        await backend.close(session: session)
+        collectTask.cancel()
     }
 
     @Test("can_use_tool mapper exposes allow/deny options for coordinator answer")

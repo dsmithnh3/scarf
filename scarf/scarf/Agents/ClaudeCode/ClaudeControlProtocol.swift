@@ -82,8 +82,8 @@ enum ClaudeControlProtocol {
     }
 
     /// Encode the response shape Claude Code expects for a `can_use_tool`
-    /// request. Used by the host permission bridge; `.permissions` stays
-    /// unadvertised until launch prompting matches this wire path.
+    /// request. Used by the host permission bridge when launch uses
+    /// `--permission-mode default` + `--permission-prompt-tool stdio`.
     static func encodePermissionResponse(
         requestID: String,
         decision: ClaudePermissionDecision

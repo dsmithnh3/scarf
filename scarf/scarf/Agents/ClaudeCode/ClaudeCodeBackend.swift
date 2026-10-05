@@ -29,13 +29,14 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
 
     nonisolated let id: AgentID = .claudeCode
     nonisolated let displayName = "Claude Code"
-    /// `.permissions` stays unadvertised until launch mode + live Claude prompting
-    /// are verified to match this host bridge (fake-process round trip alone is
-    /// not enough — launch still uses `--permission-mode dontAsk`).
+    /// `.permissions` is advertised only with host-prompting launch
+    /// (`--permission-mode default` + `--permission-prompt-tool stdio`) and
+    /// a verified can_use_tool receive/answer round trip.
     nonisolated let capabilities: AgentCapabilities = [
         .streaming,
         .reasoning,
         .toolCalls,
+        .permissions,
         .sessions,
         .resume,
         .mcp,

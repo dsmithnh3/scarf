@@ -5,8 +5,8 @@ import Foundation
 /// Visibility matches Hermes chat (`RichChatViewModel.shouldShowSlashMenu`):
 /// show only while the draft is a single `/token` with no whitespace. Filtering
 /// is delegated to ``AgentSlashCommandRegistry.hints`` so backend scope and
-/// capability gates stay truthful (Claude catalog stays empty; permissions stay
-/// unadvertised).
+/// capability gates stay truthful (Claude catalog stays empty; Claude
+/// `.permissions` is advertised once host-prompting launch is verified).
 public struct AgentSlashHintPresentation: Equatable, Sendable {
     public var isVisible: Bool
     public var query: String
@@ -46,7 +46,8 @@ public struct AgentSlashHintPresenter: Sendable, Equatable {
     }
 
     /// Capability sets that mirror the production Hermes / Claude backends
-    /// without inventing unsupported flags (Claude omits `.permissions`).
+    /// without inventing unsupported flags (Claude includes `.permissions`
+    /// only once host-prompting launch + can_use_tool round trip are verified).
     public static func defaultCapabilities(for backendID: AgentID) -> AgentCapabilities {
         switch backendID {
         case .hermes:
@@ -72,6 +73,7 @@ public struct AgentSlashHintPresenter: Sendable, Equatable {
                 .streaming,
                 .reasoning,
                 .toolCalls,
+                .permissions,
                 .sessions,
                 .resume,
                 .mcp,

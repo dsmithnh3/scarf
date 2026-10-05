@@ -27,9 +27,32 @@ struct ClaudeProcessConfigurationTests {
         #expect(command.arguments.contains("11111111-1111-4111-8111-111111111111"))
         #expect(command.arguments.contains("--model"))
         #expect(command.arguments.contains("opus"))
+        // Host-prompting launch: Agent SDK pushes `--permission-prompt-tool stdio`
+        // when canUseTool is set; `--permission-mode default` is the mode that
+        // actually emits can_use_tool (dontAsk never calls the host).
         #expect(command.arguments.contains("--permission-mode"))
-        #expect(command.arguments.contains("dontAsk"))
+        #expect(command.arguments.contains("default"))
+        #expect(!command.arguments.contains("dontAsk"))
+        #expect(command.arguments.contains("--permission-prompt-tool"))
+        #expect(command.arguments.contains("stdio"))
         #expect(!command.arguments.contains("--dangerously-skip-permissions"))
+    }
+
+    @Test("host-prompting permission mode is selected before dontAsk when permissions are desired")
+    func hostPromptingPermissionModeSelection() throws {
+        let configuration = ClaudeLaunchConfiguration(
+            executable: "/usr/local/bin/claude",
+            workingDirectory: URL(fileURLWithPath: "/tmp/project"),
+            sessionID: "22222222-2222-4222-8222-222222222222"
+        )
+        let arguments = ClaudeProcessConfiguration.command(for: configuration).arguments
+
+        let modeIndex = try #require(arguments.firstIndex(of: "--permission-mode"))
+        #expect(arguments[modeIndex + 1] == "default")
+        let promptToolIndex = try #require(arguments.firstIndex(of: "--permission-prompt-tool"))
+        #expect(arguments[promptToolIndex + 1] == "stdio")
+        #expect(!arguments.contains("dontAsk"))
+        #expect(!arguments.contains("--dangerously-skip-permissions"))
     }
 
     @Test("resume selects existing Claude session instead of assigning a new id")

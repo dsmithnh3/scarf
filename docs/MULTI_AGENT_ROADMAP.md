@@ -82,12 +82,17 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 4 wire permission coordinator into respond/cancel (`97bf9f63`) — `AgentConversationState` owns `permissionCoordinator`; `permissionRequested` enqueues (Hermes-mapped via `forEvent`); controller `respond`/`cancelPermission` prefer coordinator wire shape then update queue; legacy `permissionRequest` stays FIFO-presented. Claude `.permissions` still unadvertised; no Claude round trip / CLUI UI. Tests: `AgentConversationPermissionWiringTests` (+ state/coordinator coverage). CI run [37380432695](https://github.com/dsmithnh3/scarf/actions/runs/37380432695) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 2 GuardedJSONStore for identity + transcript sidecars (`ee56c946`) — `AgentConversationIdentityStore` and `AgentConversationTranscriptStore` conform to `GuardedSidecarStore` (`refuseForever`, `LocalTransport` default): inspect→mutate→publish RMW, one store per file, one-deep `.bak` on overwrite. Undecodable bytes refuse writes and are quarantined for the human. Claude `can_use_tool` wire encode/decode exists but live round trip remains blocked (`dontAsk`, respond throws, incoming `control_request` not consumed); `.permissions` stays unadvertised. Tests: corrupt-refuse + bak coverage in identity/transcript suites. CI run [37382269610](https://github.com/dsmithnh3/scarf/actions/runs/37382269610) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 4 Claude `can_use_tool` host round trip (wire + coordinator) (`16586ea9`) — `ClaudeCodeBackend` consumes incoming `control_request` / `can_use_tool` → `permissionRequested`; `respond`/`cancelPermission` send `ClaudeControlProtocol.encodePermissionResponse` allow/deny (cancel→deny). Channel stand-in + fake-process controller tests. Launch still `--permission-mode dontAsk`; `.permissions` stays unadvertised until a verified prompting mode matches the bridge. No CLUI UI. Tests: `ClaudeCodeBackendTests` permission suite. CI run [37383730860](https://github.com/dsmithnh3/scarf/actions/runs/37383730860) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 4 Claude host-prompting launch mode (`PENDING_SHA`) — replace `dontAsk` with verified Agent SDK host flags (`--permission-mode default` + `--permission-prompt-tool stdio`); advertise Claude `.permissions` behind an explicit launch+round-trip audit test. Hermes unchanged; no CLUI UI; no Codex. Tests: `ClaudeProcessConfigurationTests`, `ClaudeCodeBackendTests` host-prompting audit, ScarfCore capability defaults. CI filter also runs `ClaudeProcessConfigurationTests`.
 
 ## Current TDD milestone
 
+### Phase 4 — Claude host-prompting launch mode
+
+**GREEN for verified host-prompting launch + truthful `.permissions`.** Launch uses `--permission-mode default` and `--permission-prompt-tool stdio` (Agent SDK `canUseTool` path; `dontAsk` never emits host prompts). Capability audit requires those flags plus receive/answer round trip before advertising `.permissions`. Hermes unchanged; no CLUI UI; no Codex. Commit `PENDING_SHA`.
+
 ### Phase 4 — Claude can_use_tool host round trip
 
-**GREEN for fake-process / channel stand-in round trip; `.permissions` still unadvertised.** Incoming Claude `can_use_tool` control requests normalize to `AgentEvent.permissionRequested` (allow/deny options) and enqueue via existing conversation coordinator wiring. Controller `respond("allow")` / `cancelPermission` write the verified allow/deny `control_response` envelopes through `ClaudeProcessManager.sendRecord`. Launch remains `--permission-mode dontAsk` so real Claude will not prompt yet — capability stays off until that launch mode is verified. Hermes unchanged; no CLUI UI; no Codex. Commit `16586ea9`. CI green (all 4 gates including Claude Process Tests): [37383730860](https://github.com/dsmithnh3/scarf/actions/runs/37383730860).
+**GREEN for fake-process / channel stand-in round trip; superseded for launch gating by host-prompting slice above.** Incoming Claude `can_use_tool` control requests normalize to `AgentEvent.permissionRequested` (allow/deny options) and enqueue via existing conversation coordinator wiring. Controller `respond("allow")` / `cancelPermission` write the verified allow/deny `control_response` envelopes through `ClaudeProcessManager.sendRecord`. Commit `16586ea9`. CI green (all 4 gates including Claude Process Tests): [37383730860](https://github.com/dsmithnh3/scarf/actions/runs/37383730860).
 
 ### Phase 2 — GuardedJSONStore for identity + transcript sidecars
 
@@ -95,7 +100,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ### Phase 4 — Claude permissions launch-mode gap
 
-**PARTIAL — host wire green; live Claude prompting still blocked by `dontAsk`.** Receive → coordinator → answer/cancel → backend `control_response` is implemented and tested with channel/fake-process stand-ins. Do **not** advertise `.permissions` until launch uses a verified host-prompting permission mode. CLUI UI remains out of scope.
+**RESOLVED by host-prompting launch slice** — see "Claude host-prompting launch mode" above. `dontAsk` replaced; `.permissions` advertised only with launch+round-trip audit.
 
 ### Phase 4 — wire permission coordinator into respond/cancel
 
@@ -197,7 +202,7 @@ Claude process cleanup is locked without a production change. Conversation close
 2. ~~Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.~~ **Done** — both stores are `GuardedSidecarStore` with `refuseForever`.
 3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI). Multi-Agent Tests [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 4. ~~Integrate Hermes skills/plugins/MCP read-only into the catalog.~~ **Done** — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call `HermesPluginDirectoryScanner`, `SkillsScanner`, and a lightweight config.yaml MCP roster; Claude skill catalog stays empty; no UI. Tests: `AgentExtensionCatalogHermesLoaderTests`. Commits `ce4b7232` / `fda7fcc8`. Multi-Agent+Compile+macOS [37372242630](https://github.com/dsmithnh3/scarf/actions/runs/37372242630); Claude prior [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
-5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next clear slice: verify a Claude launch permission mode that prompts the host (replace `dontAsk`) **before** advertising `.permissions`; host allow/deny wire + coordinator round trip is already green.
+5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next clear slice: Phase 5 Claude installation/version diagnostics (host-prompting launch + `.permissions` advertisement are green).
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -327,7 +332,7 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] GuardedJSONStore for identity/transcript sidecars (`ee56c946` — `GuardedSidecarStore` / `refuseForever`; one store per file).
 - [ ] Claude structured history when a verified protocol/file source exists (**blocked** — no verified source found; do not invent).
 - [x] Claude `can_use_tool` host round trip through coordinator (channel + fake-process tests; `.permissions` still unadvertised while `dontAsk`).
-- [ ] Verify Claude launch permission mode that prompts the host (replace `dontAsk`) **before** advertising `.permissions`.
+- [x] Verify Claude launch permission mode that prompts the host (`--permission-mode default` + `--permission-prompt-tool stdio`; advertise `.permissions` behind launch+round-trip audit).
 
 ### Phase 2 — adopt high-value CLUI patterns
 
