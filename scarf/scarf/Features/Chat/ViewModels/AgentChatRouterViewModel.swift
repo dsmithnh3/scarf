@@ -1,0 +1,110 @@
+import Foundation
+import Observation
+import ScarfCore
+
+/// Compatibility router for the staged multi-agent chat migration.
+///
+/// A project handoff must be resolved *before* the legacy `ChatView` renders,
+/// because that view consumes `AppCoordinator.pendingProjectChat` on appear.
+/// Old/missing project records remain Hermes. Explicit non-Hermes preferences
+/// are routed through `AgentRuntime`; an unavailable backend is surfaced rather
+/// than silently falling back to Hermes.
+@MainActor
+@Observable
+final class AgentChatRouterViewModel {
+    enum Route {
+        case legacy(projectPath: String?)
+        case resolving(projectPath: String)
+        case agent(project: ScarfProject, viewModel: AgentChatViewModel)
+        case unavailable(projectPath: String, backendID: AgentID?, message: String)
+    }
+
+    private let context: ServerContext
+    private let projectStore: ProjectStore
+    private let runtime: AgentRuntime
+
+    private(set) var route: Route = .legacy(projectPath: nil)
+    private var requestedProjectPath: String?
+
+    init(context: ServerContext) {
+        self.context = context
+        self.projectStore = ProjectStore(context: context)
+        self.runtime = AgentRuntime(context: context)
+    }
+
+    /// Resolve one project handoff. Repeated calls for the same path are cheap,
+    /// while a newer path supersedes an older in-flight transport read.
+    func resolve(projectPath: String) async {
+        if requestedProjectPath == projectPath {
+            switch route {
+            case .resolving, .agent, .unavailable, .legacy:
+                return
+            }
+        }
+
+        requestedProjectPath = projectPath
+        route = .resolving(projectPath: projectPath)
+
+        let store = projectStore
+        let record = await Task.detached(priority: .userInitiated) {
+            store.loadDetailed(projectPath: projectPath)
+        }.value
+
+        guard requestedProjectPath == projectPath else { return }
+
+        switch record {
+        case .absent:
+            // Pre-multi-agent projects intentionally have no preference record.
+            // Their compatibility default is Hermes.
+            route = .legacy(projectPath: projectPath)
+
+        case .unreadable(let path):
+            route = .unavailable(
+                projectPath: projectPath,
+                backendID: nil,
+                message: "Scarf could not read the project record at \(path). The chat backend was not changed or guessed."
+            )
+
+        case .loaded(let project):
+            guard project.preferredAgentID != .hermes else {
+                route = .legacy(projectPath: projectPath)
+                return
+            }
+
+            guard let controller = await runtime.conversationController(for: project) else {
+                let detail = context.isRemote
+                    ? "\(project.preferredAgentID.rawValue) is not available in this remote window."
+                    : "\(project.preferredAgentID.rawValue) is not available on this Mac."
+                route = .unavailable(
+                    projectPath: projectPath,
+                    backendID: project.preferredAgentID,
+                    message: detail
+                )
+                return
+            }
+
+            route = .agent(
+                project: project,
+                viewModel: AgentChatViewModel(
+                    controller: controller,
+                    backendID: project.preferredAgentID,
+                    workingDirectory: URL(fileURLWithPath: project.rootPath)
+                )
+            )
+        }
+    }
+
+    /// A plain Chat navigation with no project handoff remains on the legacy
+    /// Hermes surface unless an agent project conversation is already active.
+    func useLegacyWhenIdle() {
+        guard requestedProjectPath == nil else { return }
+        route = .legacy(projectPath: nil)
+    }
+
+    /// Called after the routed project handoff has been consumed by either the
+    /// legacy or generic surface. The resolved route itself is intentionally
+    /// retained so returning to Chat restores the same surface for this window.
+    func markHandoffConsumed(projectPath: String) {
+        guard requestedProjectPath == projectPath else { return }
+    }
+}
