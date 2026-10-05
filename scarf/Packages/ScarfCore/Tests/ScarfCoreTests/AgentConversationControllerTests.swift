@@ -14,6 +14,7 @@ struct AgentConversationControllerTests {
         private var sentMessages: [AgentMessage] = []
         private var cancelledSessions: [String] = []
         private var closedSessions: [String] = []
+        private var nextSessionNumber = 0
 
         init(id: AgentID = .claudeCode, displayName: String = "Claude Code") {
             self.id = id
@@ -27,8 +28,9 @@ struct AgentConversationControllerTests {
         nonisolated func models() async throws -> [AgentModel] { [] }
 
         func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
-            AgentSession(
-                id: "session-1",
+            nextSessionNumber += 1
+            return AgentSession(
+                id: "session-\(nextSessionNumber)",
                 backendID: id,
                 workingDirectory: configuration.workingDirectory
             )
@@ -152,5 +154,27 @@ struct AgentConversationControllerTests {
         #expect(await backend.cancelled() == ["session-1"])
         #expect(await backend.closed() == ["session-1"])
         #expect((await controller.stateSnapshot()).isClosed)
+    }
+
+    @Test("starting a replacement session closes the previous session")
+    func replacementSessionClosesPrevious() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = RecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        let first = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+        let second = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+
+        #expect(first.id == "session-1")
+        #expect(second.id == "session-2")
+        #expect(await backend.closed() == ["session-1"])
+        #expect((await controller.stateSnapshot()).session == second)
     }
 }
