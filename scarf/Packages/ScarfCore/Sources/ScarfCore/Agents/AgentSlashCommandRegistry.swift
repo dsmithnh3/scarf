@@ -43,6 +43,7 @@ public struct AgentSlashCommandDescriptor: Codable, Equatable, Hashable, Sendabl
     public var argumentHint: String?
     public var execution: AgentSlashCommandExecution
     public var category: String?
+    public var source: AgentSlashCommandCatalogSource
 
     public init(
         name: String,
@@ -52,7 +53,8 @@ public struct AgentSlashCommandDescriptor: Codable, Equatable, Hashable, Sendabl
         requiredCapabilities: AgentCapabilities = [],
         argumentHint: String? = nil,
         execution: AgentSlashCommandExecution,
-        category: String? = nil
+        category: String? = nil,
+        source: AgentSlashCommandCatalogSource = .scarfLocal
     ) {
         self.name = name
         self.description = description
@@ -62,6 +64,7 @@ public struct AgentSlashCommandDescriptor: Codable, Equatable, Hashable, Sendabl
         self.argumentHint = argumentHint
         self.execution = execution
         self.category = category
+        self.source = source
     }
 
     public func isAvailable(
@@ -113,6 +116,27 @@ public struct AgentSlashCommandRegistry: Sendable, Equatable {
         return available.filter { command in
             if command.name.lowercased().hasPrefix(needle) { return true }
             return command.aliases.contains { $0.lowercased().hasPrefix(needle) }
+        }
+    }
+
+    /// Backend-aware hint rows for a Scarf-native slash menu (no UI yet).
+    public func hints(
+        matching query: String = "",
+        backendID: AgentID,
+        capabilities: AgentCapabilities
+    ) -> [AgentSlashCommandHint] {
+        matchingCommands(
+            query: query,
+            backendID: backendID,
+            capabilities: capabilities
+        ).map { command in
+            AgentSlashCommandHint(
+                name: command.name,
+                description: command.description,
+                argumentHint: command.argumentHint,
+                source: command.source,
+                execution: command.execution
+            )
         }
     }
 }

@@ -73,8 +73,13 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 2 cross-source turn matching (role + content) (`1a6f6512`) — `AgentConversationTranscript.reconciling(withBackendHistory:)` keeps merge-by-id as the first pass, then matches unmatched backend messages by **role + exact content** (greedy against unmatched Scarf turns). Scarf ids/content/activity win on match; truly distinct backend messages still append. Closes the Hermes-deterministic-id vs Scarf-UUID duplicate gap without a second conversation state system. CI run [37347757216](https://github.com/dsmithnh3/scarf/actions/runs/37347757216) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
 - Phase 2 fixture `state.db` end-to-end restore (`95f60cd0`) — `AgentConversationHermesStateDBRestoreTests` builds a throwaway Hermes home/`state.db`, persists Scarf identity + durable transcript (including activity), and drives `restorePersistedSession()` through `HermesAgentConversationHistory.fetchMessages` so role+content matching keeps Scarf UUIDs/activity while appending Hermes-only turns. No production glue. CI run [37349277921](https://github.com/dsmithnh3/scarf/actions/runs/37349277921) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
 - Phase 3 backend-aware slash command registry model (`319f8610`) — `AgentSlashCommandDescriptor` + `AgentSlashCommandRegistry` in ScarfCore with backend scope, capability gating, first-wins dedupe, and name/alias prefix matching. Separate from `HermesSlashCommand` / transcript `AgentCommand`. No CLUI UI. Claude structured history remains blocked (no verified protocol source). CI run [37352437757](https://github.com/dsmithnh3/scarf/actions/runs/37352437757) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 3 Scarf-native command hints + catalog sources — `AgentSlashCommandCatalogs` (Scarf-local builtins, Hermes ACP static roster, empty Claude stub) + `AgentSlashCommandHint` / `hints(matching:backendID:capabilities:)`. No CLUI UI. Claude permissions stay unadvertised; Claude catalog empty until slash forwarding/discovery is verified.
 
 ## Current TDD milestone
+
+### Phase 3 — Scarf-native command hints + catalog sources
+
+**In progress / landing.** Extends the registry model with `AgentSlashCommandCatalogSource`, static catalogs (`scarfLocal`, `hermes(preferCompressSpelling:)`, empty `claudeCode` stub), `AgentSlashCommandCatalogs.makeRegistry`, and `AgentSlashCommandRegistry.hints(...)`. Hermes roster mirrors ACP always-available / non-interruptive truth (no CLI-only `clear`/`cost`/…). Claude catalog stays empty rather than inventing unverified commands. No composer UI yet — hint query API only. Tests: `AgentSlashCommandRegistryTests`. Hermes remains the default route. Claude permissions stay unadvertised. Claude structured history remains blocked.
 
 ### Phase 3 — backend-aware slash command registry (model slice)
 
@@ -149,9 +154,9 @@ Claude process cleanup is locked without a production change. Conversation close
 ## Next lifecycle milestones
 
 1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
-2. Backend-aware slash command registry model → Scarf-native hints (no CLUI UI transplant); wire sources after the model is green.
+2. Wire Scarf-native slash hint UI onto `AgentSlashCommandRegistry.hints` (no CLUI/Opal transplant); optional live ACP `available_commands_update` / Claude discovery once verified.
 3. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
-4. Keep the CLUI adoption order unchanged: Claude history stays blocked; proceed with command registry / skills/MCP / permissions only behind truthful capabilities; Codex remains later.
+4. Keep the CLUI adoption order unchanged: Claude history stays blocked; proceed with skills/MCP / permissions only behind truthful capabilities; Codex remains later.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -284,14 +289,14 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 ### Phase 2 — adopt high-value CLUI patterns
 
 - Compare/port provider normalization improvements.
-- Build backend-aware slash command registry + Scarf-native command hints (model slice in progress under Phase 3 checklist / `AgentSlashCommandRegistry`).
+- Build backend-aware slash command registry + Scarf-native command hints (catalog sources + hint query landing; UI wiring next).
 - Add unified skills/plugins/MCP catalog abstractions while preserving Hermes.
 - Introduce generic permission state machine with truthful capability gating.
 - Improve session persistence/tool-result/usage merge semantics.
 
 ### Phase 3 — Scarf-native setup and UX
 
-- Backend-aware slash command registry model (`AgentSlashCommandRegistry`) then Scarf-native hints (no CLUI UI transplant).
+- Backend-aware slash command registry + Scarf-native hint query (`AgentSlashCommandCatalogs` / `hints`); composer UI next (no CLUI transplant).
 - Agent/provider settings for Hermes and Claude Code.
 - Project-level backend/model preference.
 - Scarf-native backend indicator/switcher.

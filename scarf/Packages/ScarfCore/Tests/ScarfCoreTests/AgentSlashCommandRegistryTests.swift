@@ -166,12 +166,109 @@ struct AgentSlashCommandRegistryTests {
             requiredCapabilities: [.sessions, .memory],
             argumentHint: "[focus]",
             execution: .forwardToBackend,
-            category: "session"
+            category: "session",
+            source: .hermes
         )
 
         let encoded = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AgentSlashCommandDescriptor.self, from: encoded)
 
         #expect(decoded == original)
+    }
+
+    @Test("Scarf-local catalog ships bundled scarf-* commands as local execution")
+    func scarfLocalCatalogShipsBundledCommands() {
+        let names = AgentSlashCommandCatalogs.scarfLocal.map(\.name).sorted()
+        #expect(names == [
+            "scarf-cron",
+            "scarf-dashboard",
+            "scarf-export",
+            "scarf-help",
+            "scarf-new",
+            "scarf-widget",
+        ])
+        #expect(AgentSlashCommandCatalogs.scarfLocal.allSatisfy {
+            $0.source == .scarfLocal && $0.execution == .local && $0.backendScope == .scarfLocal
+        })
+    }
+
+    @Test("Hermes catalog matches ACP always-available truth and omits CLI-only names")
+    func hermesCatalogMatchesACPTruth() {
+        let compress = AgentSlashCommandCatalogs.hermes(preferCompressSpelling: true)
+        let compact = AgentSlashCommandCatalogs.hermes(preferCompressSpelling: false)
+
+        #expect(compress.map(\.name).contains("compress"))
+        #expect(!compress.map(\.name).contains("compact"))
+        #expect(compact.map(\.name).contains("compact"))
+        #expect(!compact.map(\.name).contains("compress"))
+
+        let names = Set(compress.map(\.name))
+        #expect(names.isSuperset(of: [
+            "help", "model", "tools", "context", "reset", "version", "steer", "queue", "title",
+        ]))
+        #expect(names.isDisjoint(with: ["clear", "cost", "yolo", "sessions", "codex-runtime", "reload-skills"]))
+        #expect(compress.allSatisfy { $0.source == .hermes })
+        #expect(compress.first { $0.name == "title" }?.execution == .local)
+        #expect(compress.first { $0.name == "help" }?.execution == .forwardToBackend)
+        #expect(compress.first { $0.name == "steer" }?.backendScope == .backends([.hermes]))
+    }
+
+    @Test("Claude catalog stub does not advertise unverified or permissions commands")
+    func claudeCatalogStubStaysTruthful() {
+        let commands = AgentSlashCommandCatalogs.claudeCode
+        #expect(commands.isEmpty)
+        #expect(!commands.map(\.name).contains("permissions"))
+    }
+
+    @Test("default registry merges Scarf then Hermes then Claude with first-wins")
+    func defaultRegistryMergesCatalogsFirstWins() {
+        let registry = AgentSlashCommandCatalogs.makeRegistry(hermesPreferCompressSpelling: true)
+        let hermesCaps: AgentCapabilities = [
+            .streaming, .sessions, .resume, .mcp, .skills, .memory, .cron, .toolCalls,
+        ]
+        let hermesHints = registry.hints(
+            matching: "",
+            backendID: .hermes,
+            capabilities: hermesCaps
+        )
+        let claudeHints = registry.hints(
+            matching: "",
+            backendID: .claudeCode,
+            capabilities: [.streaming, .sessions, .resume, .mcp, .toolCalls]
+        )
+
+        #expect(hermesHints.map(\.name).contains("scarf-help"))
+        #expect(hermesHints.map(\.name).contains("compress"))
+        #expect(hermesHints.map(\.name).contains("steer"))
+        #expect(!hermesHints.map(\.name).contains("clear"))
+
+        #expect(claudeHints.map(\.name).contains("scarf-help"))
+        #expect(!claudeHints.map(\.name).contains("compress"))
+        #expect(!claudeHints.map(\.name).contains("steer"))
+        #expect(!claudeHints.map(\.name).contains("permissions"))
+        #expect(claudeHints.allSatisfy { $0.source == .scarfLocal })
+    }
+
+    @Test("hints filter by prefix and format insertion text")
+    func hintsFilterAndFormatInsertionText() {
+        let registry = AgentSlashCommandCatalogs.makeRegistry(hermesPreferCompressSpelling: true)
+        let hints = registry.hints(
+            matching: "scarf-h",
+            backendID: .hermes,
+            capabilities: [.streaming, .sessions, .cron]
+        )
+
+        #expect(hints.map(\.name) == ["scarf-help"])
+        #expect(hints[0].slashName == "/scarf-help")
+        #expect(hints[0].insertionText == "/scarf-help")
+        #expect(hints[0].source == .scarfLocal)
+
+        let withArg = registry.hints(
+            matching: "scarf-c",
+            backendID: .hermes,
+            capabilities: [.streaming, .sessions, .cron]
+        ).first { $0.name == "scarf-cron" }
+        #expect(withArg?.insertionText == "/scarf-cron ")
+        #expect(withArg?.argumentHint != nil)
     }
 }
