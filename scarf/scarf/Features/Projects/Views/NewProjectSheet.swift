@@ -39,6 +39,7 @@ struct NewProjectSheet: View {
                     nameField
                     folderField
                     parentDirField
+                    agentField
                     descriptionField
                     pathPreview
                 }
@@ -48,7 +49,10 @@ struct NewProjectSheet: View {
             Divider()
             footer
         }
-        .frame(minWidth: 540, minHeight: 480)
+        .frame(minWidth: 540, minHeight: 520)
+        .task {
+            await viewModel.refreshAgentOptions()
+        }
     }
 
     // MARK: - Sections
@@ -131,6 +135,49 @@ struct NewProjectSheet: View {
                     chooseParentDirectory()
                 }
                 .accessibilityIdentifier("newProject.parent.choose")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var agentField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Agent").scarfStyle(.headline)
+                Text("*").scarfStyle(.headline).foregroundStyle(.red)
+                if viewModel.isCheckingAgentBackends {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            Text("Choose the agent runtime Scarf will use for this project's chat sessions.")
+                .scarfStyle(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Agent", selection: Bindable(viewModel).selectedAgentID) {
+                ForEach(viewModel.agentOptions) { option in
+                    Text(option.displayName)
+                        .tag(option.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .disabled(viewModel.isCheckingAgentBackends)
+            .accessibilityIdentifier("newProject.agent")
+            .accessibilityLabel("Agent")
+
+            if let selected = viewModel.agentOptions.first(where: { $0.id == viewModel.selectedAgentID }) {
+                Text(selected.detail)
+                    .scarfStyle(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let note = viewModel.agentAvailabilityNote {
+                Label(note, systemImage: "info.circle")
+                    .scarfStyle(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
