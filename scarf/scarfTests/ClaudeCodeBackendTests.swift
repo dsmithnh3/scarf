@@ -30,10 +30,26 @@ struct ClaudeCodeBackendTests {
         #expect(capabilities.contains(.usage))
         #expect(capabilities.contains(.fileChanges))
         #expect(capabilities.contains(.shellCommands))
+        // Host allow/deny wire exists, but launch still uses dontAsk and real
+        // Claude prompting is unverified — keep .permissions unadvertised.
         #expect(!capabilities.contains(.permissions))
         #expect(!capabilities.contains(.cron))
         #expect(!capabilities.contains(.gateway))
         #expect(!capabilities.contains(.proxy))
+    }
+
+    @Test("can_use_tool mapper exposes allow/deny options for coordinator answer")
+    func permissionRequestMapper() {
+        let control = ClaudePermissionControlRequest(
+            requestID: "req_map",
+            toolName: "Bash",
+            inputJSON: #"{"command":"ls"}"#
+        )
+        let request = ClaudeCodeBackend.permissionRequest(from: control)
+        #expect(request.id == "req_map")
+        #expect(request.title == "Bash")
+        #expect(request.detail == "can_use_tool")
+        #expect(request.options.map(\.id) == ["allow", "deny"])
     }
 
     @Test("missing Claude executable reports not installed")
@@ -60,32 +76,181 @@ struct ClaudeCodeBackendTests {
         #expect(await backend.installationStatus() == .available(version: "2.1-test"))
     }
 
-    @Test("permission responses fail explicitly until host permission bridge is implemented")
-    func permissionsUnsupported() async {
+    @Test("permission respond/cancel require an active Claude session")
+    func permissionsRequireActiveSession() async {
         let backend = ClaudeCodeBackend(
             executableResolver: { "/tmp/claude" },
             installationProbe: { _ in .available(version: nil) },
             environmentProvider: { [:] }
         )
         let session = AgentSession(id: "s", backendID: .claudeCode)
-        let request = AgentPermissionRequest(id: "p", title: "Approve")
+        let request = AgentPermissionRequest(
+            id: "p",
+            title: "Write",
+            detail: "can_use_tool",
+            options: [
+                AgentPermissionOption(id: "allow", title: "Allow"),
+                AgentPermissionOption(id: "deny", title: "Deny"),
+            ]
+        )
 
         do {
             try await backend.respond(to: request, optionID: "allow", in: session)
-            Issue.record("Expected unsupported permissions error")
+            Issue.record("Expected session-not-active for respond")
         } catch let error as AgentError {
-            #expect(error.code == "claude.permissions-not-implemented")
+            #expect(error.code == "claude.session-not-active")
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         do {
             try await backend.cancelPermission(request, in: session)
-            Issue.record("Expected unsupported permissions error on cancel")
+            Issue.record("Expected session-not-active for cancel")
         } catch let error as AgentError {
-            #expect(error.code == "claude.permissions-not-implemented")
+            #expect(error.code == "claude.session-not-active")
         } catch {
             Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("can_use_tool control_request becomes permissionRequested and allow writes control_response")
+    func canUseToolRoundTripAllowViaChannel() async throws {
+        let channel = PermissionMockChannel()
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/tmp/claude" },
+            installationProbe: { _ in .available(version: "channel-test") },
+            environmentProvider: { [:] },
+            channelFactory: { _, _ in channel }
+        )
+        let collector = PermissionEventCollector()
+        let collectTask = Task { await collector.consume(backend.events) }
+
+        let session = try await backend.createSession(
+            configuration: AgentSessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true)
+            )
+        )
+
+        let permissionLine = #"{"type":"control_request","request_id":"req_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/a.txt","content":"hello"}}}"#
+        await channel.emit(permissionLine)
+
+        let request = try await collector.nextPermission()
+        #expect(request.id == "req_perm")
+        #expect(request.title == "Write")
+        #expect(request.detail == "can_use_tool")
+        #expect(request.options.map(\.id) == ["allow", "deny"])
+
+        try await backend.respond(to: request, optionID: "allow", in: session)
+
+        let sent = try await channel.waitForSentCount(1)
+        let data = try #require(sent[0].data(using: .utf8))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["type"] as? String == "control_response")
+        let outer = try #require(json["response"] as? [String: Any])
+        #expect(outer["request_id"] as? String == "req_perm")
+        let response = try #require(outer["response"] as? [String: Any])
+        #expect(response["behavior"] as? String == "allow")
+        let updatedInput = try #require(response["updatedInput"] as? [String: Any])
+        #expect(updatedInput["file_path"] as? String == "/tmp/a.txt")
+
+        await backend.close(session: session)
+        collectTask.cancel()
+    }
+
+    @Test("cancelPermission writes deny control_response for pending can_use_tool")
+    func canUseToolRoundTripCancelViaChannel() async throws {
+        let channel = PermissionMockChannel()
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/tmp/claude" },
+            installationProbe: { _ in .available(version: "channel-test") },
+            environmentProvider: { [:] },
+            channelFactory: { _, _ in channel }
+        )
+        let collector = PermissionEventCollector()
+        let collectTask = Task { await collector.consume(backend.events) }
+
+        let session = try await backend.createSession(
+            configuration: AgentSessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true)
+            )
+        )
+
+        let permissionLine = #"{"type":"control_request","request_id":"req_cancel","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"}}}"#
+        await channel.emit(permissionLine)
+        let request = try await collector.nextPermission()
+
+        try await backend.cancelPermission(request, in: session)
+
+        let sent = try await channel.waitForSentCount(1)
+        let data = try #require(sent[0].data(using: .utf8))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let outer = try #require(json["response"] as? [String: Any])
+        #expect(outer["request_id"] as? String == "req_cancel")
+        let response = try #require(outer["response"] as? [String: Any])
+        #expect(response["behavior"] as? String == "deny")
+        #expect(response["message"] as? String == "Cancelled by user")
+
+        await backend.close(session: session)
+        collectTask.cancel()
+    }
+
+    @Test("conversation controller allow round-trips Claude can_use_tool through coordinator")
+    func controllerAllowRoundTripThroughCoordinator() async throws {
+        try await ClaudeProcessLifecycleProbe.withSession(
+            script: ClaudeProcessLifecycleProbe.permissionPromptScript
+        ) { probe in
+            let ready = try await probe.nextText()
+            #expect(ready == "ready")
+
+            let pending = try await probe.waitForState {
+                $0.permissionCoordinator.pending.contains(where: { $0.id == "req_perm_1" })
+            }
+            let presented = try #require(pending.permissionCoordinator.presented)
+            #expect(presented.id == "req_perm_1")
+            #expect(presented.backendID == .claudeCode)
+            #expect(presented.category == "can_use_tool")
+            #expect(presented.description == "Write")
+            #expect(presented.options.map(\.id) == ["allow", "deny"])
+            #expect(pending.permissionRequest?.id == "req_perm_1")
+
+            try await probe.controller.respond(
+                to: presented.asAgentPermissionRequest,
+                optionID: "allow"
+            )
+
+            let allowed = try await probe.nextText()
+            #expect(allowed == "allowed")
+
+            let after = await probe.controller.stateSnapshot()
+            #expect(after.permissionCoordinator.pending.isEmpty)
+            #expect(after.permissionRequest == nil)
+            #expect(after.permissionCoordinator.records.first { $0.id == "req_perm_1" }?.status == .answered)
+            #expect(after.permissionCoordinator.records.first { $0.id == "req_perm_1" }?.selectedOptionID == "allow")
+        }
+    }
+
+    @Test("conversation controller cancel round-trips Claude can_use_tool deny response")
+    func controllerCancelRoundTripThroughCoordinator() async throws {
+        try await ClaudeProcessLifecycleProbe.withSession(
+            script: ClaudeProcessLifecycleProbe.permissionPromptScript
+        ) { probe in
+            let ready = try await probe.nextText()
+            #expect(ready == "ready")
+
+            let pending = try await probe.waitForState {
+                $0.permissionCoordinator.pending.contains(where: { $0.id == "req_perm_1" })
+            }
+            let presented = try #require(pending.permissionCoordinator.presented)
+
+            try await probe.controller.cancelPermission(presented.asAgentPermissionRequest)
+
+            let denied = try await probe.nextText()
+            #expect(denied == "denied")
+
+            let after = await probe.controller.stateSnapshot()
+            #expect(after.permissionCoordinator.pending.isEmpty)
+            #expect(after.permissionRequest == nil)
+            #expect(after.permissionCoordinator.records.first { $0.id == "req_perm_1" }?.status == .cancelled)
         }
     }
 
@@ -551,6 +716,134 @@ private final class ClaudeProcessLifecycleProbe {
     os.close(fifo)
     log.write("exit\\n")
     """
+
+    /// Emits ready text then a can_use_tool control_request; answers with text
+    /// when the host writes allow/deny control_response frames.
+    static let permissionPromptScript = """
+    #!/usr/bin/python3
+    import json, os, sys
+
+    fifo = os.open(os.environ["SCARF_CLAUDE_LIFECYCLE_FIFO"], os.O_WRONLY)
+    log = open(os.environ["SCARF_CLAUDE_LIFECYCLE_LOG"], "w", buffering=1)
+    log.write("pid %s\\n" % os.getpid())
+
+    def emit_obj(obj):
+        sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\\n")
+        sys.stdout.flush()
+
+    def emit(text):
+        emit_obj({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "delta": {"type": "text_delta", "text": text},
+            },
+        })
+        log.write("emit %s\\n" % text)
+
+    emit("ready")
+    emit_obj({
+        "type": "control_request",
+        "request_id": "req_perm_1",
+        "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "Write",
+            "input": {"file_path": "/tmp/a.txt", "content": "hello"},
+        },
+    })
+    log.write("emit permission\\n")
+    while True:
+        line = sys.stdin.readline()
+        if line == "":
+            log.write("stdin eof\\n")
+            break
+        log.write("in %s" % line)
+        if '"type":"control_response"' in line and '"behavior":"allow"' in line:
+            emit("allowed")
+        elif '"type":"control_response"' in line and '"behavior":"deny"' in line:
+            emit("denied")
+        elif '"subtype":"interrupt"' in line:
+            emit("interrupted")
+        elif '"type":"user"' in line:
+            emit("ack")
+    os.close(fifo)
+    log.write("exit\\n")
+    """
+}
+
+/// Channel stand-in that can push Claude stdout lines and capture stdin writes.
+private actor PermissionMockChannel: ACPChannel {
+    nonisolated let incoming: AsyncThrowingStream<String, Error>
+    nonisolated let stderr: AsyncThrowingStream<String, Error>
+    private let incomingContinuation: AsyncThrowingStream<String, Error>.Continuation
+    private var sent: [String] = []
+    private var sentWaiters: [CheckedContinuation<[String], Error>] = []
+    private var closed = false
+
+    init() {
+        var continuation: AsyncThrowingStream<String, Error>.Continuation!
+        incoming = AsyncThrowingStream { continuation = $0 }
+        incomingContinuation = continuation
+        stderr = AsyncThrowingStream { $0.finish() }
+    }
+
+    func emit(_ line: String) {
+        incomingContinuation.yield(line)
+    }
+
+    func send(_ line: String) async throws {
+        sent.append(line)
+        let waiters = sentWaiters
+        sentWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume(returning: sent)
+        }
+    }
+
+    func close() async {
+        closed = true
+        incomingContinuation.finish()
+    }
+
+    var diagnosticID: String? { "permission-mock" }
+    var lastExitCode: Int32? { closed ? 0 : nil }
+
+    func waitForSentCount(_ count: Int) async throws -> [String] {
+        if sent.count >= count { return sent }
+        return try await withCheckedThrowingContinuation { continuation in
+            sentWaiters.append(continuation)
+        }
+    }
+}
+
+private actor PermissionEventCollector {
+    private var permissions: [AgentPermissionRequest] = []
+    private var waiters: [CheckedContinuation<AgentPermissionRequest, Error>] = []
+
+    func consume(_ events: AsyncStream<AgentEvent>) async {
+        for await event in events {
+            guard case .permissionRequested(let request) = event else { continue }
+            if waiters.isEmpty {
+                permissions.append(request)
+            } else {
+                waiters.removeFirst().resume(returning: request)
+            }
+        }
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            waiter.resume(throwing: ClaudeProcessLifecycleError.streamEnded)
+        }
+    }
+
+    func nextPermission() async throws -> AgentPermissionRequest {
+        if !permissions.isEmpty {
+            return permissions.removeFirst()
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
 }
 
 private actor TextCollector {

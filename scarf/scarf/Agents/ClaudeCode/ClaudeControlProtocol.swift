@@ -82,8 +82,8 @@ enum ClaudeControlProtocol {
     }
 
     /// Encode the response shape Claude Code expects for a `can_use_tool`
-    /// request. This exists before the capability is advertised so Scarf can
-    /// validate the wire contract without exposing a brittle approval UI.
+    /// request. Used by the host permission bridge; `.permissions` stays
+    /// unadvertised until launch prompting matches this wire path.
     static func encodePermissionResponse(
         requestID: String,
         decision: ClaudePermissionDecision

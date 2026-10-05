@@ -10,6 +10,10 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     typealias ExecutableResolver = @Sendable () -> String?
     typealias InstallationProbe = @Sendable (String) async -> AgentInstallationStatus
     typealias EnvironmentProvider = @Sendable () -> [String: String]
+    typealias ChannelFactory = @Sendable (
+        _ command: ClaudeProcessCommand,
+        _ environment: [String: String]
+    ) async throws -> any ACPChannel
 
     private struct Runtime {
         let manager: ClaudeProcessManager
@@ -18,8 +22,16 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         let stderrTask: Task<Void, Never>
     }
 
+    private struct PendingPermission: Sendable {
+        let sessionID: String
+        let inputJSON: String
+    }
+
     nonisolated let id: AgentID = .claudeCode
     nonisolated let displayName = "Claude Code"
+    /// `.permissions` stays unadvertised until launch mode + live Claude prompting
+    /// are verified to match this host bridge (fake-process round trip alone is
+    /// not enough — launch still uses `--permission-mode dontAsk`).
     nonisolated let capabilities: AgentCapabilities = [
         .streaming,
         .reasoning,
@@ -37,9 +49,11 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     private let executableResolver: ExecutableResolver
     private let installationProbe: InstallationProbe
     private let environmentProvider: EnvironmentProvider
+    private let channelFactory: ChannelFactory?
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var runtimes: [String: Runtime] = [:]
+    private var pendingPermissions: [String: PendingPermission] = [:]
 
     init(
         executableResolver: @escaping ExecutableResolver = {
@@ -49,11 +63,13 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         installationProbe: @escaping InstallationProbe = ClaudeCodeBackend.defaultInstallationProbe,
         environmentProvider: @escaping EnvironmentProvider = {
             HermesFileService.enrichedEnvironment()
-        }
+        },
+        channelFactory: ChannelFactory? = nil
     ) {
         self.executableResolver = executableResolver
         self.installationProbe = installationProbe
         self.environmentProvider = environmentProvider
+        self.channelFactory = channelFactory
 
         var continuation: AsyncStream<AgentEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
@@ -156,20 +172,55 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         optionID: String,
         in session: AgentSession
     ) async throws {
-        throw AgentError(
-            code: "claude.permissions-not-implemented",
-            message: "Claude Code host permission responses are not enabled yet"
+        guard let runtime = runtimes[session.id] else {
+            throw AgentError(
+                code: "claude.session-not-active",
+                message: "Claude Code session is not active"
+            )
+        }
+
+        let decision: ClaudePermissionDecision
+        switch optionID {
+        case "allow":
+            // Echo the original tool input when we still have it; Claude accepts
+            // allow without `updatedInput` as well.
+            decision = .allow(updatedInputJSON: pendingPermissions[request.id]?.inputJSON)
+        case "deny":
+            decision = .deny(message: "Denied by user")
+        default:
+            throw AgentError(
+                code: "claude.invalid-permission-option",
+                message: "Claude Code permission option must be allow or deny"
+            )
+        }
+
+        let line = try ClaudeControlProtocol.encodePermissionResponse(
+            requestID: request.id,
+            decision: decision
         )
+        try await runtime.manager.sendRecord(line)
+        pendingPermissions.removeValue(forKey: request.id)
     }
 
     func cancelPermission(
         _ request: AgentPermissionRequest,
         in session: AgentSession
     ) async throws {
-        throw AgentError(
-            code: "claude.permissions-not-implemented",
-            message: "Claude Code host permission responses are not enabled yet"
+        guard let runtime = runtimes[session.id] else {
+            throw AgentError(
+                code: "claude.session-not-active",
+                message: "Claude Code session is not active"
+            )
+        }
+
+        // Claude's verified can_use_tool wire only defines allow/deny behaviors;
+        // host cancel maps to deny so the process is not left waiting.
+        let line = try ClaudeControlProtocol.encodePermissionResponse(
+            requestID: request.id,
+            decision: .deny(message: "Cancelled by user")
         )
+        try await runtime.manager.sendRecord(line)
+        pendingPermissions.removeValue(forKey: request.id)
     }
 
     func cancel(session: AgentSession) async {
@@ -187,6 +238,7 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
 
     func close(session: AgentSession) async {
         guard let runtime = runtimes.removeValue(forKey: session.id) else { return }
+        pendingPermissions = pendingPermissions.filter { $0.value.sessionID != session.id }
         runtime.incomingTask.cancel()
         runtime.stderrTask.cancel()
         await runtime.manager.close()
@@ -200,6 +252,7 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         resume: Bool
     ) async throws {
         if let existing = runtimes.removeValue(forKey: session.id) {
+            pendingPermissions = pendingPermissions.filter { $0.value.sessionID != session.id }
             existing.incomingTask.cancel()
             existing.stderrTask.cancel()
             await existing.manager.close()
@@ -215,7 +268,15 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
             resume: resume
         )
         let command = ClaudeProcessConfiguration.command(for: launch)
-        let manager = ClaudeProcessManager(environmentProvider: environmentProvider)
+        let manager: ClaudeProcessManager
+        if let channelFactory {
+            manager = ClaudeProcessManager(
+                channelFactory: channelFactory,
+                environmentProvider: environmentProvider
+            )
+        } else {
+            manager = ClaudeProcessManager(environmentProvider: environmentProvider)
+        }
         let decoder = ClaudeStreamDecoder()
         let streams = try await manager.start(command: command)
 
@@ -254,6 +315,18 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
                                 isRecoverable: true
                             )), sessionID: sessionID)
                         }
+                        continue
+                    }
+
+                    if let permission = try ClaudeControlProtocol.decodePermissionRequest(line) {
+                        pendingPermissions[permission.requestID] = PendingPermission(
+                            sessionID: sessionID,
+                            inputJSON: permission.inputJSON
+                        )
+                        yield(
+                            .permissionRequested(Self.permissionRequest(from: permission)),
+                            sessionID: sessionID
+                        )
                         continue
                     }
 
@@ -328,6 +401,22 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     private func yield(_ event: AgentEvent, sessionID: String) {
         eventContinuation.yield(event)
         sessionEventContinuation.yield(AgentBackendEvent(sessionID: sessionID, event: event))
+    }
+
+    /// Normalize a decoded Claude `can_use_tool` control request into the
+    /// generic permission event shape used by the conversation coordinator.
+    nonisolated static func permissionRequest(
+        from permission: ClaudePermissionControlRequest
+    ) -> AgentPermissionRequest {
+        AgentPermissionRequest(
+            id: permission.requestID,
+            title: permission.toolName,
+            detail: "can_use_tool",
+            options: [
+                AgentPermissionOption(id: "allow", title: "Allow"),
+                AgentPermissionOption(id: "deny", title: "Deny"),
+            ]
+        )
     }
 
     /// Keep Scarf's runtime session id as the routing key even when Claude's
