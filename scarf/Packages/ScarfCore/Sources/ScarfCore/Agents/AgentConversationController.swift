@@ -46,6 +46,12 @@ public actor AgentConversationController {
         configuration: AgentSessionConfiguration
     ) async throws -> AgentSession {
         await ensureEventLoop()
+        // Release the outgoing session before the replacement exists. A failed
+        // close leaves that session active and does not create another one, so
+        // the controller never claims both sessions or a session it could not
+        // release. A successful close drops the outgoing session before
+        // creation; if creation then fails, the controller claims neither.
+        try await retireActiveSessionForReplacement()
         let session = try await coordinator.createSession(
             backendID: backendID,
             configuration: configuration
@@ -130,6 +136,29 @@ public actor AgentConversationController {
 
     public func stateSnapshot() -> AgentConversationState {
         state
+    }
+
+    /// Closes the active session so a replacement can take its place.
+    ///
+    /// The outgoing session stays active when close fails. After a successful
+    /// close, both the session and backend pointers are cleared before the
+    /// caller installs a replacement. In-flight events for the retired session
+    /// therefore cannot be applied to the next session, and a creation failure
+    /// cannot leave the controller pointing at a session it already closed.
+    private func retireActiveSessionForReplacement() async throws {
+        guard let previous = activeSession else { return }
+        try await coordinator.close(session: previous)
+        guard let current = activeSession,
+              current.backendID == previous.backendID,
+              current.id == previous.id else {
+            return
+        }
+        activeSession = nil
+        activeBackendID = nil
+        if !state.isClosed {
+            state.apply(.sessionClosed)
+            publishState()
+        }
     }
 
     private func ensureEventLoop() async {
