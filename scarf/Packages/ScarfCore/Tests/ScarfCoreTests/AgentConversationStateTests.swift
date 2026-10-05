@@ -179,6 +179,9 @@ struct AgentConversationStateTests {
 
         state.apply(.permissionRequested(permission))
         #expect(state.permissionRequest == permission)
+        #expect(state.permissionCoordinator.pending.map(\.id) == ["permission-1"])
+        #expect(state.permissionCoordinator.presented?.backendID == .claudeCode)
+        #expect(state.permissionCoordinator.presented?.sessionID == "session-1")
 
         state.apply(.error(recoverable))
         #expect(state.error == recoverable)
@@ -187,6 +190,39 @@ struct AgentConversationStateTests {
         #expect(state.isClosed)
         #expect(!state.isRunning)
         #expect(state.permissionRequest == nil)
+        #expect(state.permissionCoordinator.pending.isEmpty)
+    }
+
+    @Test("Hermes permissionRequested enqueues hermes-mapped coordinator record")
+    func hermesPermissionRequestedEnqueuesMappedRecord() {
+        var state = AgentConversationState()
+        let session = AgentSession(id: "hermes-sess", backendID: .hermes, workingDirectory: nil)
+        let permission = AgentPermissionRequest(
+            id: "42",
+            title: "run: ls",
+            detail: "execute",
+            options: [
+                AgentPermissionOption(id: "allow_once", title: "Allow once"),
+                AgentPermissionOption(id: "deny", title: "Deny"),
+            ]
+        )
+
+        state.apply(.sessionStarted(session))
+        state.apply(.permissionRequested(permission))
+
+        #expect(state.permissionRequest == permission)
+        let presented = state.permissionCoordinator.presented
+        #expect(presented?.id == "42")
+        #expect(presented?.backendID == .hermes)
+        #expect(presented?.sessionID == "hermes-sess")
+        #expect(presented?.asAgentPermissionRequest == permission)
+        #expect(Int(presented?.id ?? "") == 42)
+
+        let answered = state.answerPermission(id: "42", optionID: "allow_once")
+        #expect(answered)
+        #expect(state.permissionRequest == nil)
+        #expect(state.permissionCoordinator.pending.isEmpty)
+        #expect(state.permissionCoordinator.records.first?.status == .answered)
     }
 
     @Test("availableCommandsUpdated stores live ACP descriptors and clears on sessionClosed")

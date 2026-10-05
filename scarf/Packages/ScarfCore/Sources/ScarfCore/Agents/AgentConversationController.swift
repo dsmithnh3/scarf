@@ -232,14 +232,22 @@ public actor AgentConversationController {
         guard let session = activeSession else {
             throw AgentConversationControllerError.noActiveSession
         }
-        try await coordinator.respond(to: request, optionID: optionID, in: session)
+        // Prefer the coordinator's Hermes-preserving wire shape when pending so
+        // ACP numeric ids / options stay intact through the backend call.
+        let wire = permissionWireRequest(for: request)
+        try await coordinator.respond(to: wire, optionID: optionID, in: session)
+        _ = state.answerPermission(id: wire.id, optionID: optionID)
+        publishState()
     }
 
     public func cancelPermission(_ request: AgentPermissionRequest) async throws {
         guard let session = activeSession else {
             throw AgentConversationControllerError.noActiveSession
         }
-        try await coordinator.cancelPermission(request, in: session)
+        let wire = permissionWireRequest(for: request)
+        try await coordinator.cancelPermission(wire, in: session)
+        _ = state.cancelPermission(id: wire.id)
+        publishState()
     }
 
     public func cancel() async throws {
@@ -278,6 +286,15 @@ public actor AgentConversationController {
 
     private func sameSession(_ lhs: AgentSession, _ rhs: AgentSession) -> Bool {
         lhs.backendID == rhs.backendID && lhs.id == rhs.id
+    }
+
+    /// Wire request for respond/cancel: coordinator record when pending, else
+    /// the caller-supplied request (Hermes ACP ids preserved as strings).
+    private func permissionWireRequest(for request: AgentPermissionRequest) -> AgentPermissionRequest {
+        if let record = state.permissionCoordinator.pending.first(where: { $0.id == request.id }) {
+            return record.asAgentPermissionRequest
+        }
+        return request
     }
 
     /// Closes the active session so a replacement can take its place.

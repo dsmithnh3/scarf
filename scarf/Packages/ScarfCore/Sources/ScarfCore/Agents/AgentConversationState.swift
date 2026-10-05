@@ -22,6 +22,9 @@ public struct AgentConversationState: Equatable, Sendable {
 
     public private(set) var fileChanges: [AgentFileChange] = []
     public private(set) var permissionRequest: AgentPermissionRequest?
+    /// Backend-neutral permission queue. Enqueued from `permissionRequested`
+    /// events; answered/cancelled via controller respond/cancel. Not durable.
+    public private(set) var permissionCoordinator = AgentPermissionCoordinator()
     public private(set) var usage: AgentUsage?
     public private(set) var error: AgentError?
     public private(set) var stopReason: String?
@@ -33,6 +36,24 @@ public struct AgentConversationState: Equatable, Sendable {
     public private(set) var isClosed = false
 
     public init() {}
+
+    /// Mark a pending permission answered and advance the presented request.
+    @discardableResult
+    public mutating func answerPermission(id: String, optionID: String) -> Bool {
+        let answered = permissionCoordinator.answer(id: id, optionID: optionID)
+        guard answered else { return false }
+        permissionRequest = permissionCoordinator.presented?.asAgentPermissionRequest
+        return true
+    }
+
+    /// Mark a pending permission cancelled and advance the presented request.
+    @discardableResult
+    public mutating func cancelPermission(id: String) -> Bool {
+        let cancelled = permissionCoordinator.cancel(id: id)
+        guard cancelled else { return false }
+        permissionRequest = permissionCoordinator.presented?.asAgentPermissionRequest
+        return true
+    }
 
     /// Hydrate committed transcript fields after a session identity restore.
     ///
@@ -79,7 +100,7 @@ public struct AgentConversationState: Equatable, Sendable {
         isClosed = false
         stopReason = nil
         error = nil
-        permissionRequest = nil
+        clearLivePermissions()
     }
 
     public mutating func apply(_ event: AgentEvent) {
@@ -137,6 +158,9 @@ public struct AgentConversationState: Equatable, Sendable {
 
         case .permissionRequested(let request):
             permissionRequest = request
+            if let session {
+                permissionCoordinator.record(.forEvent(request, session: session))
+            }
 
         case .usageUpdated(let usage):
             self.usage = usage
@@ -148,13 +172,13 @@ public struct AgentConversationState: Equatable, Sendable {
             commitReasoningDraft()
             commitAssistantDraft()
             self.stopReason = stopReason
-            permissionRequest = nil
+            clearLivePermissions()
             isRunning = false
 
         case .sessionClosed:
             commitReasoningDraft()
             commitAssistantDraft()
-            permissionRequest = nil
+            clearLivePermissions()
             discoveredSlashCommands = []
             isRunning = false
             isClosed = true
@@ -162,6 +186,12 @@ public struct AgentConversationState: Equatable, Sendable {
         case .error(let error):
             self.error = error
         }
+    }
+
+    /// Drop live pending permissions while keeping answered/cancelled history.
+    private mutating func clearLivePermissions() {
+        permissionRequest = nil
+        permissionCoordinator.clearPending()
     }
 
     private mutating func commitAssistantDraft() {

@@ -91,6 +91,29 @@ public struct AgentPermissionRecord: Codable, Equatable, Hashable, Sendable, Ide
         )
     }
 
+    /// Build a coordinator record from a live `permissionRequested` event.
+    ///
+    /// Hermes keeps the ACP numeric-id adapter; other backends store a generic
+    /// pending row without advertising capabilities they do not implement.
+    public static func forEvent(
+        _ request: AgentPermissionRequest,
+        session: AgentSession
+    ) -> AgentPermissionRecord {
+        if session.backendID == .hermes {
+            return .hermes(from: request, sessionID: session.id)
+        }
+        return AgentPermissionRecord(
+            id: request.id,
+            backendID: session.backendID,
+            sessionID: session.id,
+            category: request.detail ?? "",
+            description: request.title,
+            options: request.options,
+            scope: .unspecified,
+            status: .pending
+        )
+    }
+
     /// Wire shape expected by `AgentBackend.respond` / `cancelPermission`.
     public var asAgentPermissionRequest: AgentPermissionRequest {
         AgentPermissionRequest(

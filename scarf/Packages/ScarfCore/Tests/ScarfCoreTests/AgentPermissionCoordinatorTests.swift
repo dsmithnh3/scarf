@@ -78,6 +78,26 @@ struct AgentPermissionCoordinatorTests {
         #expect(Int(wire.id) == 42) // HermesBackend requires Int(request.id)
     }
 
+    @Test("forEvent uses Hermes adapter for hermes sessions and generic rows otherwise")
+    func forEventDispatchesByBackend() {
+        let request = hermesRequest()
+        let hermesSession = AgentSession(id: "h1", backendID: .hermes, workingDirectory: nil)
+        let claudeSession = AgentSession(id: "c1", backendID: .claudeCode, workingDirectory: nil)
+
+        let hermesRecord = AgentPermissionRecord.forEvent(request, session: hermesSession)
+        #expect(hermesRecord.backendID == .hermes)
+        #expect(hermesRecord.sessionID == "h1")
+        #expect(hermesRecord.asAgentPermissionRequest == request)
+        #expect(Int(hermesRecord.id) == 42)
+
+        let claudeRecord = AgentPermissionRecord.forEvent(request, session: claudeSession)
+        #expect(claudeRecord.backendID == .claudeCode)
+        #expect(claudeRecord.sessionID == "c1")
+        #expect(claudeRecord.id == request.id)
+        #expect(claudeRecord.description == request.title)
+        #expect(claudeRecord.category == "execute")
+    }
+
     @Test("Hermes capabilities include permissions; Claude default capabilities do not")
     func capabilityGatePreservesHermesOmitsClaude() {
         let hermesCaps = AgentSlashHintPresenter.defaultCapabilities(for: .hermes)
