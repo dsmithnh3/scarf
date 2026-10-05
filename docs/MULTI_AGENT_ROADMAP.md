@@ -61,6 +61,8 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - `8daeeb59` — CI run [37313877576](https://github.com/dsmithnh3/scarf/actions/runs/37313877576) passed Multi-Agent Tests, ScarfCore Compile Gate, and macOS App Build.
 - `a1234f23` — already-green lock for Claude process cleanup. `conversationCloseTerminatesClaudeProcess` proves conversation close terminates the Claude process. `turnCancelInterruptsClaudeWithoutTerminatingProcess` proves turn cancel delivers a control interrupt and leaves that process running until a later close. `ClaudeCodeBackend.close` already cancelled the stream tasks and closed the process manager, and `cancel` already sent the interrupt, so no production code changed. Dropping `manager.close()` makes the close test fail with `processStillRunning`.
 - `9389a29a` — Claude Process Tests CI job. First run failed compiling scarfTests because `try #require(throwingCall)` does not compile under Xcode 26.6; follow-up fixes the Claude control protocol tests so the host-app suite can build.
+- `2513c302` — Claude divergent system-init session ids are aligned to Scarf's runtime session id (`claudeReportedSessionID` metadata). Installation/resume not-installed paths and resume-of-active identity covered.
+- `9a15aaa1` — failed create/resume and unexpected Claude process exit surface through `AgentConversationState.error`. CI run [37327549215](https://github.com/dsmithnh3/scarf/actions/runs/37327549215) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests (12/12 suite cases).
 
 ## Current TDD milestone
 
