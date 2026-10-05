@@ -159,7 +159,7 @@ Claude process cleanup is locked without a production change. Conversation close
 ## Next lifecycle milestones
 
 1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
-2. Land CI for Scarf-native slash hint UI (`AgentSlashHintPresenter` / `AgentSlashHintMenu`); optional live ACP `available_commands_update` / Claude discovery once verified.
+2. Optional live ACP `available_commands_update` / Claude discovery once verified (slash hint UI landed on static catalogs).
 3. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
 4. Keep the CLUI adoption order unchanged: Claude history stays blocked; proceed with skills/MCP / permissions only behind truthful capabilities; Codex remains later.
 
