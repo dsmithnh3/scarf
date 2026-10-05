@@ -87,6 +87,15 @@ public actor AgentCoordinator {
         try await requiredBackend(session.backendID).resumeSession(session)
     }
 
+    /// Routes structured history fetch to the session's backend.
+    ///
+    /// Backends without a real history source return `[]` (see
+    /// ``AgentBackend/fetchConversationHistory(for:)``); callers must not
+    /// treat emptiness as proof the backend advertised history support.
+    public func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
+        try await requiredBackend(session.backendID).fetchConversationHistory(for: session)
+    }
+
     public func send(_ message: AgentMessage, in session: AgentSession) async throws {
         try await requiredBackend(session.backendID).send(message, in: session)
     }

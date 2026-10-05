@@ -134,6 +134,15 @@ actor HermesBackend: SessionScopedAgentBackend {
         return resumed
     }
 
+    /// ACP `session/load` replays history as streaming chunks, not a
+    /// structured `[AgentMessage]` payload. Returning `[]` keeps restore
+    /// reconcile Scarf-preferring until a verified structured source
+    /// (state.db read or replay collector) is wired. Do not advertise a
+    /// history capability.
+    func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
+        []
+    }
+
     func send(_ message: AgentMessage, in session: AgentSession) async throws {
         guard message.role == .user else {
             throw AgentError(

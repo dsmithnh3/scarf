@@ -127,6 +127,14 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         return session
     }
 
+    /// Claude `--resume` restarts the process; Scarf has no verified
+    /// structured transcript/history API yet. Returning `[]` avoids inventing
+    /// session-file parsers and keeps restore reconcile Scarf-preferring.
+    /// Do not advertise a history capability.
+    func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
+        []
+    }
+
     func send(_ message: AgentMessage, in session: AgentSession) async throws {
         guard message.role == .user else {
             throw AgentError(

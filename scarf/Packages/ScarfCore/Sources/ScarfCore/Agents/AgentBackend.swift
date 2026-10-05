@@ -36,6 +36,23 @@ public protocol AgentBackend: Sendable {
     func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws
     func cancel(session: AgentSession) async
     func close(session: AgentSession) async
+
+    /// Structured conversation history for a resumed session, when the backend
+    /// can provide it as `[AgentMessage]`.
+    ///
+    /// Backends without a verified structured history source must return `[]`
+    /// rather than inventing parsers or advertising a capability they do not
+    /// have. Empty history keeps Scarf's durable transcript preferred via
+    /// ``AgentConversationTranscript/reconciling(withBackendHistory:)``.
+    func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage]
+}
+
+extension AgentBackend {
+    /// Default: no structured history. Concrete backends override when a real
+    /// protocol source exists.
+    public func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
+        []
+    }
 }
 
 /// Opt-in session-aware event source for backends that can own more than one

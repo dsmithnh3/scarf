@@ -157,12 +157,16 @@ public actor AgentConversationController {
     ///
     /// After resume, rehydrates any durable transcript snapshot so a relaunch
     /// restores messages/toolResults/usage without a second state system.
-    /// Optional `backendHistory` is reconciled against the Scarf transcript
-    /// (empty backend → prefer Scarf; id merge otherwise — see
-    /// ``AgentConversationTranscript/reconciling(withBackendHistory:)``).
+    ///
+    /// When `backendHistory` is `nil` (the production default), history is
+    /// fetched from the resumed session's backend via
+    /// ``AgentCoordinator/fetchConversationHistory(for:)``. Pass an explicit
+    /// array to override (tests). Empty history — fetched or supplied —
+    /// prefers Scarf via
+    /// ``AgentConversationTranscript/reconciling(withBackendHistory:)``.
     @discardableResult
     public func restorePersistedSession(
-        backendHistory: [AgentMessage] = []
+        backendHistory: [AgentMessage]? = nil
     ) async throws -> AgentSession? {
         guard let conversationID,
               let identityStore,
@@ -170,7 +174,13 @@ public actor AgentConversationController {
             return nil
         }
         let session = try await resumeSession(identity.makeSession())
-        hydratePersistedTranscript(backendHistory: backendHistory)
+        let history: [AgentMessage]
+        if let backendHistory {
+            history = backendHistory
+        } else {
+            history = try await coordinator.fetchConversationHistory(for: session)
+        }
+        hydratePersistedTranscript(backendHistory: history)
         return session
     }
 
