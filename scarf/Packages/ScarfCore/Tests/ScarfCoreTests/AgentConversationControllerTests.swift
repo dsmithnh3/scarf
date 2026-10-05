@@ -177,4 +177,87 @@ struct AgentConversationControllerTests {
         #expect(await backend.closed() == ["session-1"])
         #expect((await controller.stateSnapshot()).session == second)
     }
+
+    @Test("late events from a replaced session do not modify the new session")
+    func replacementIgnoresLatePreviousSessionEvents() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = ScopedRecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        let first = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration(metadata: ["testSessionID": "session-a"])
+        )
+        let second = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration(metadata: ["testSessionID": "session-b"])
+        )
+
+        let completed = Task<AgentConversationState?, Never> {
+            for await state in controller.stateUpdates {
+                if state.stopReason == "b-done" { return state }
+            }
+            return nil
+        }
+
+        await backend.emit(.textDelta("from-a"), sessionID: first.id)
+        await backend.emit(.textCompleted, sessionID: first.id)
+        await backend.emit(.textDelta("from-b"), sessionID: second.id)
+        await backend.emit(.textCompleted, sessionID: second.id)
+        await backend.emit(.turnCompleted(stopReason: "b-done"), sessionID: second.id)
+
+        let state = try #require(await completed.value)
+        #expect(state.session == second)
+        #expect(state.messages.map(\.content) == ["from-b"])
+        #expect(!state.isClosed)
+        #expect(await backend.closed() == [first.id])
+    }
+
+    private actor ScopedRecordingBackend: SessionScopedAgentBackend {
+        nonisolated let id: AgentID = .claudeCode
+        nonisolated let displayName = "Scoped Claude"
+        nonisolated let capabilities: AgentCapabilities = [.streaming, .sessions]
+        nonisolated let events: AsyncStream<AgentEvent>
+        nonisolated let sessionEvents: AsyncStream<AgentBackendEvent>
+
+        private let eventContinuation: AsyncStream<AgentEvent>.Continuation
+        private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
+        private var closedSessions: [String] = []
+
+        init() {
+            var eventContinuation: AsyncStream<AgentEvent>.Continuation!
+            events = AsyncStream { eventContinuation = $0 }
+            self.eventContinuation = eventContinuation
+
+            var sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation!
+            sessionEvents = AsyncStream { sessionEventContinuation = $0 }
+            self.sessionEventContinuation = sessionEventContinuation
+        }
+
+        nonisolated func installationStatus() async -> AgentInstallationStatus { .available(version: nil) }
+        nonisolated func models() async throws -> [AgentModel] { [] }
+
+        func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
+            let sessionID = configuration.metadata["testSessionID"] ?? UUID().uuidString
+            return AgentSession(id: sessionID, backendID: id, workingDirectory: configuration.workingDirectory)
+        }
+
+        func resumeSession(_ session: AgentSession) async throws -> AgentSession { session }
+        func send(_ message: AgentMessage, in session: AgentSession) async throws {}
+        func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws {}
+        func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws {}
+        func cancel(session: AgentSession) async {}
+
+        func close(session: AgentSession) async {
+            closedSessions.append(session.id)
+        }
+
+        func emit(_ event: AgentEvent, sessionID: String) {
+            eventContinuation.yield(event)
+            sessionEventContinuation.yield(AgentBackendEvent(sessionID: sessionID, event: event))
+        }
+
+        func closed() -> [String] { closedSessions }
+    }
 }
