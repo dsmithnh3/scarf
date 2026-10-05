@@ -23,6 +23,8 @@ public actor AgentConversationController {
     private var activeSession: AgentSession?
     private var activeBackendID: AgentID?
     private var eventTask: Task<Void, Never>?
+    private var lastConsumedSequence: UInt64 = 0
+    private var routedSequenceWaiters: [(UInt64, CheckedContinuation<Void, Never>)] = []
 
     public init(coordinator: AgentCoordinator) {
         self.coordinator = coordinator
@@ -143,12 +145,23 @@ public actor AgentConversationController {
         }
         try await coordinator.close(session: session)
         activeSession = nil
+        activeBackendID = nil
         state.apply(.sessionClosed)
         publishState()
     }
 
     public func stateSnapshot() -> AgentConversationState {
         state
+    }
+
+    /// Waits until this controller has handled every routed event up through
+    /// `sequence`. Ignored events still count, so a caller can prove that an
+    /// event was dropped instead of racing the stream.
+    func waitUntilRoutedSequenceConsumed(_ sequence: UInt64) async {
+        if lastConsumedSequence >= sequence { return }
+        await withCheckedContinuation { continuation in
+            routedSequenceWaiters.append((sequence, continuation))
+        }
     }
 
     private func sameSession(_ lhs: AgentSession, _ rhs: AgentSession) -> Bool {
@@ -190,13 +203,18 @@ public actor AgentConversationController {
     }
 
     private func consume(_ routed: AgentRoutedEvent) {
-        guard routed.backendID == activeBackendID else { return }
+        lastConsumedSequence = routed.sequence
+        resumeRoutedSequenceWaiters()
+
+        // A closed conversation has no active session. Drop both scoped and
+        // legacy unscoped events so a late sessionStarted cannot resurrect it.
+        guard let session = activeSession, routed.backendID == activeBackendID else { return }
 
         // Scoped backends can host multiple sessions simultaneously. Ignore an
         // event carrying a different session id; unscoped legacy backends retain
-        // their previous backend-only routing behavior for compatibility.
+        // their previous backend-only routing behavior while a session is active.
         if let routedSessionID = routed.sessionID {
-            guard routedSessionID == activeSession?.id else { return }
+            guard routedSessionID == session.id else { return }
         }
 
         state.apply(routed.event)
@@ -210,5 +228,17 @@ public actor AgentConversationController {
 
     private func publishState() {
         stateContinuation.yield(state)
+    }
+
+    private func resumeRoutedSequenceWaiters() {
+        var pending: [(UInt64, CheckedContinuation<Void, Never>)] = []
+        for (sequence, continuation) in routedSequenceWaiters {
+            if lastConsumedSequence >= sequence {
+                continuation.resume()
+            } else {
+                pending.append((sequence, continuation))
+            }
+        }
+        routedSequenceWaiters = pending
     }
 }

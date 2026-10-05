@@ -254,6 +254,97 @@ struct AgentConversationControllerTests {
         #expect((await controller.stateSnapshot()).isClosed == false)
     }
 
+    @Test("late unscoped events after close do not mutate conversation state")
+    func lateUnscopedEventsAfterCloseDoNotMutateState() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = RecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+        let session = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+
+        let drafted = Task<AgentConversationState?, Never> {
+            for await state in controller.stateUpdates {
+                if state.assistantDraft == "kept" { return state }
+            }
+            return nil
+        }
+        await backend.emit(.textDelta("kept"))
+        _ = try #require(await drafted.value)
+        try await controller.close()
+
+        let stream = await coordinator.subscribeToRoutedEvents()
+        let forwarded = Task<UInt64?, Never> {
+            for await routed in stream {
+                if routed.event == .turnCompleted(stopReason: "probe-done") {
+                    return routed.sequence
+                }
+            }
+            return nil
+        }
+        await backend.emit(.textDelta("late"))
+        await backend.emit(.sessionStarted(AgentSession(id: "resurrected", backendID: .claudeCode)))
+        await backend.emit(.turnCompleted(stopReason: "probe-done"))
+        let sequence = try #require(await forwarded.value)
+        await controller.waitUntilRoutedSequenceConsumed(sequence)
+
+        let state = await controller.stateSnapshot()
+        #expect(state.isClosed)
+        #expect(state.session?.id == session.id)
+        #expect(state.stopReason == nil)
+        #expect(state.assistantDraft.isEmpty)
+        #expect(state.messages.map(\.content) == ["kept"])
+    }
+
+    @Test("late scoped events after close do not mutate conversation state")
+    func lateScopedEventsAfterCloseDoNotMutateState() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = ScopedRecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+        let session = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration(metadata: ["testSessionID": "session-a"])
+        )
+
+        let drafted = Task<AgentConversationState?, Never> {
+            for await state in controller.stateUpdates {
+                if state.assistantDraft == "kept" { return state }
+            }
+            return nil
+        }
+        await backend.emit(.textDelta("kept"), sessionID: session.id)
+        _ = try #require(await drafted.value)
+        try await controller.close()
+
+        let stream = await coordinator.subscribeToRoutedEvents()
+        let forwarded = Task<UInt64?, Never> {
+            for await routed in stream {
+                if routed.event == .turnCompleted(stopReason: "probe-done") {
+                    return routed.sequence
+                }
+            }
+            return nil
+        }
+        await backend.emit(.textDelta("late"), sessionID: session.id)
+        await backend.emit(
+            .sessionStarted(AgentSession(id: "resurrected", backendID: .claudeCode)),
+            sessionID: session.id
+        )
+        await backend.emit(.turnCompleted(stopReason: "probe-done"), sessionID: session.id)
+        let sequence = try #require(await forwarded.value)
+        await controller.waitUntilRoutedSequenceConsumed(sequence)
+
+        let state = await controller.stateSnapshot()
+        #expect(state.isClosed)
+        #expect(state.session?.id == session.id)
+        #expect(state.stopReason == nil)
+        #expect(state.assistantDraft.isEmpty)
+        #expect(state.messages.map(\.content) == ["kept"])
+    }
+
     @Test("resuming on another backend closes the previous backend session")
     func resumeSwitchesBackendAndClosesPrevious() async throws {
         let coordinator = AgentCoordinator()
