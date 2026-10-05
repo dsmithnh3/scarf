@@ -51,7 +51,7 @@ struct ClaudeControlProtocolTests {
         #expect(second.hasPrefix("scarf_req_"))
     }
 
-    @Test("can_use_tool control request is decoded for future host approval UI")
+    @Test("can_use_tool control request is decoded for host permission bridge")
     func permissionRequestDecoding() throws {
         let line = #"{"type":"control_request","request_id":"req_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/a.txt","content":"hello"}}}"#
         let decoded = try ClaudeControlProtocol.decodePermissionRequest(line)

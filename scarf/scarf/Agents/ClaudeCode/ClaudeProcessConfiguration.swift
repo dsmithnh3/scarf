@@ -36,9 +36,9 @@ enum ClaudeProcessConfiguration {
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
-            // Until Scarf implements Claude's host-side can_use_tool bridge,
-            // unresolved permission requests must be rejected instead of
-            // hanging in a non-interactive process or bypassing safeguards.
+            // Host can_use_tool allow/deny wire exists, but keep dontAsk until a
+            // verified Claude launch mode that prompts the host is confirmed.
+            // Advertising `.permissions` while dontAsk is active would overclaim.
             "--permission-mode", "dontAsk",
         ]
 
