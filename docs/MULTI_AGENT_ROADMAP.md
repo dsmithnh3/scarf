@@ -68,12 +68,19 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 2 transcript fidelity (first durable slice) (`f7edf853`) — `AgentConversationTranscript` + file-backed `AgentConversationTranscriptStore` persist `conversationID → (messages, toolResults, usage)`. Controller saves after send/event reduction, clears on start/close, and `restorePersistedSession()` rehydrates into `AgentConversationState` after identity resume. Production path: `HermesPathSet.agentConversationTranscripts` / `makePersisting`. Live drafts/permissions/toolCalls remain reducer-only. CI run [37334461764](https://github.com/dsmithnh3/scarf/actions/runs/37334461764) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
 - Phase 2 deeper resume fidelity (activity fields) (`2defeb07`) — extend the same `AgentConversationTranscript` snapshot with `toolCalls`, `commands` / `commandOutput` / `commandResults`, `fileChanges`, and `reasoningBlocks`. `restoreDurableTranscript` rehydrates those fields and aligns tool/command status from matching result ids. Legacy first-slice JSON still decodes (missing activity keys → empty). Drafts/permissions remain reducer-only. Backend-history reconciliation and GuardedJSONStore remain deferred. CI run [37336556378](https://github.com/dsmithnh3/scarf/actions/runs/37336556378) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
 - Phase 2 backend-history reconciliation (smallest contract) (`7a671773`) — pure `AgentConversationTranscript.reconciling(withBackendHistory:)` plus `restorePersistedSession(backendHistory:)`. Empty backend prefers Scarf (messages + activity); empty Scarf messages adopt backend; both non-empty merge by `AgentMessage.id` (Scarf wins collisions, backend-only ids append, Scarf activity retained). Hermes/Claude still do not return structured history into the controller; RichChatViewModel state.db stays separate. Open decision: content/role matching when backends use non-Scarf UUID ids. GuardedJSONStore remains deferred. CI run [37338697417](https://github.com/dsmithnh3/scarf/actions/runs/37338697417) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
+- Phase 2 backend-history fetch wiring (`e1af06be`) — `AgentBackend.fetchConversationHistory(for:)` (default `[]`) + `AgentCoordinator` route. `restorePersistedSession(backendHistory:)` now defaults to `nil` and fetches after identity resume; explicit arrays remain test overrides. Hermes ACP `session/load` only replays streaming chunks; Claude `--resume` has no structured history API yet — both backends return `[]` without advertising a history capability. Fake-backend tests prove fetch + reconcile. GuardedJSONStore / content-role matching remain deferred.
 
 ## Current TDD milestone
 
+### Phase 2 — backend-history fetch wiring
+
+**GREEN for controller/coordinator history fetch into reconcile.** Production restore (`restorePersistedSession()` / `startOrRestorePersistedSession`) fetches `[AgentMessage]` from the resumed backend and passes it into the existing reconcile contract. Hermes and Claude return `[]` (no structured source yet; no capability advertised), so Scarf durable transcripts remain preferred. Fake backends in `AgentConversationBackendHistoryFetchTests` prove non-empty fetch merges. Cross-source id mapping remains open. Optional GuardedJSONStore adoption remains a later follow-up. CI pending for `e1af06be`.
+
+Hermes remains the default route. Claude permission capability stays unset.
+
 ### Phase 2 — backend-history reconciliation (smallest contract)
 
-**GREEN for the Scarf↔backend message reconcile contract.** Callers may pass optional backend history into `restorePersistedSession(backendHistory:)`; default `[]` preserves prior restore behavior. Does not fetch Hermes ACP replay or Claude stream history yet. Cross-source id mapping (Hermes state.db / ACP replay without Scarf UUIDs) remains an open product decision. Optional GuardedJSONStore adoption remains a later follow-up. CI green: [37338697417](https://github.com/dsmithnh3/scarf/actions/runs/37338697417).
+**GREEN for the Scarf↔backend message reconcile contract.** Callers may pass optional backend history into `restorePersistedSession(backendHistory:)`; explicit arrays override fetch. Superseded for production wiring by the fetch slice above. Cross-source id mapping (Hermes state.db / ACP replay without Scarf UUIDs) remains an open product decision. Optional GuardedJSONStore adoption remains a later follow-up. CI green: [37338697417](https://github.com/dsmithnh3/scarf/actions/runs/37338697417).
 
 Hermes remains the default route. Claude permission capability stays unset.
 
@@ -117,7 +124,7 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. Feed real Hermes ACP / Claude backend history into `restorePersistedSession(backendHistory:)` (today backends only resume identity; no structured `[AgentMessage]` return).
+1. Implement the first real structured history source for Hermes and/or Claude (Hermes state.db / verified ACP replay collector, or Claude session transcript when a protocol source is confirmed) behind `fetchConversationHistory` — today both return `[]`.
 2. Decide cross-source turn matching when backend ids are not Scarf UUIDs (Hermes state.db / ACP replay) — content/role merge deferred until then.
 3. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
 4. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.

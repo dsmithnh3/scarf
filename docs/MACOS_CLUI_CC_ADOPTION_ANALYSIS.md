@@ -614,7 +614,8 @@ Each can be evaluated independently after multi-agent foundations are stable.
 - [x] Add restart/resume identity tests (`restorePersistedSession`).
 - [x] Add restart/resume transcript fidelity tests (`AgentConversationTranscriptFidelityTests`).
 - [x] Add backend-history reconciliation tests (`AgentConversationBackendHistoryReconciliationTests`).
-- [ ] Wire real Hermes ACP / Claude history into `backendHistory` (backends currently resume identity only).
+- [x] Wire `fetchConversationHistory` into restore (`AgentConversationBackendHistoryFetchTests`; Hermes/Claude return `[]` until a structured source exists).
+- [ ] Implement first real Hermes/Claude structured history source behind `fetchConversationHistory`.
 - [ ] Decide cross-source turn matching when backend ids ≠ Scarf UUIDs.
 - [ ] Define migration strategy for persisted session schema.
 
