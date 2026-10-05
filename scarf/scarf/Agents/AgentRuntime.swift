@@ -5,10 +5,39 @@ import ScarfCore
 ///
 /// This deliberately carries no selection or mutation API. Exposing backend
 /// health in Settings must not change the backend used by existing Hermes chat.
+/// `executablePath` is the discovered CLI path when known; `nil` means not
+/// found (never a guessed fallback).
 struct AgentBackendStatusSnapshot: Identifiable, Equatable, Sendable {
     let id: AgentID
     let displayName: String
+    let executablePath: String?
     let status: AgentInstallationStatus
+}
+
+/// Shared formatting for provider diagnostics detail lines (Settings + tests).
+enum AgentBackendStatusFormatting {
+    static func detailText(for snapshot: AgentBackendStatusSnapshot) -> String {
+        switch snapshot.status {
+        case .available(let version):
+            var parts: [String] = []
+            if let version, !version.isEmpty {
+                parts.append(version)
+            }
+            if let path = snapshot.executablePath, !path.isEmpty {
+                parts.append(path)
+            }
+            if parts.isEmpty {
+                return snapshot.id == .hermes ? "Hermes runtime detected" : "Runtime detected"
+            }
+            return parts.joined(separator: " · ")
+        case .notInstalled:
+            return snapshot.id == .claudeCode
+                ? "Claude Code executable was not found"
+                : "Runtime executable was not found"
+        case .unavailable(let reason):
+            return reason
+        }
+    }
 }
 
 /// Per-window/profile composition root for agent backends.
@@ -64,6 +93,7 @@ actor AgentRuntime {
                 AgentBackendStatusSnapshot(
                     id: backend.id,
                     displayName: backend.displayName,
+                    executablePath: backend.resolvedExecutablePath(),
                     status: await backend.installationStatus()
                 )
             )

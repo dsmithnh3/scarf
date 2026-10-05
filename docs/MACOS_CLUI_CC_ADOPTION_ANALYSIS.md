@@ -596,10 +596,10 @@ Each can be evaluated independently after multi-agent foundations are stable.
 - [x] Add late-event-after-switch regression coverage.
 - [x] Add late-event-after-close regression coverage, including unscoped legacy events.
 - [ ] Harden Claude cancel/close/process cleanup with an app-target test. Process-manager replacement close already exists; this environment cannot compile the macOS target.
-- [ ] Add Claude installation/version diagnostics.
-- [ ] Audit resume/session identity fidelity beyond controller cleanup.
+- [x] Add Claude installation/version diagnostics.
+- [x] Audit resume/session identity fidelity beyond controller cleanup.
 - [ ] Audit Claude event normalization against CLUI. The reference repository was not readable here.
-- [ ] Audit capability flags. Permissions remain explicitly unsupported.
+- [x] Audit capability flags. Permissions advertised only behind host-prompting launch + round-trip audit.
 
 ### Phase 2 — sessions and provider semantics
 

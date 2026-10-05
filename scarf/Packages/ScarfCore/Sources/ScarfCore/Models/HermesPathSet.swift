@@ -224,10 +224,29 @@ public struct HermesPathSet: Sendable, Hashable {
         if isRemote {
             return binaryHint ?? "hermes"
         }
-        for path in Self.hermesBinaryCandidates
-        where FileManager.default.isExecutableFile(atPath: path) {
+        return Self.resolveInstalledBinary() ?? Self.hermesBinaryCandidates[0]
+    }
+
+    /// Local: first executable candidate, or `nil` when Hermes is not installed.
+    /// Remote: the configured hint / `hermes` command name (remote probe decides
+    /// availability — local filesystem checks are not authoritative).
+    public nonisolated var hermesBinaryIfInstalled: String? {
+        if isRemote {
+            return hermesBinary
+        }
+        return Self.resolveInstalledBinary()
+    }
+
+    /// First executable path among `candidates`, or `nil` when none exist.
+    /// Used by provider diagnostics so a missing install is not reported as a
+    /// guessed fallback path.
+    public nonisolated static func resolveInstalledBinary(
+        candidates: [String] = hermesBinaryCandidates,
+        fileManager: FileManager = .default
+    ) -> String? {
+        for path in candidates where fileManager.isExecutableFile(atPath: path) {
             return path
         }
-        return Self.hermesBinaryCandidates[0]
+        return nil
     }
 }

@@ -139,16 +139,6 @@ private struct AgentBackendStatusRow: View {
     }
 
     private var detailText: String {
-        switch snapshot.status {
-        case .available(let version):
-            if let version, !version.isEmpty { return version }
-            return snapshot.id == .hermes ? "Hermes runtime detected" : "Runtime detected"
-        case .notInstalled:
-            return snapshot.id == .claudeCode
-                ? "Claude Code executable was not found"
-                : "Runtime executable was not found"
-        case .unavailable(let reason):
-            return reason
-        }
+        AgentBackendStatusFormatting.detailText(for: snapshot)
     }
 }

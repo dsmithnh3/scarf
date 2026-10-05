@@ -116,6 +116,7 @@ struct ClaudeCodeBackendTests {
             environmentProvider: { [:] }
         )
         #expect(await backend.installationStatus() == .notInstalled)
+        #expect(backend.resolvedExecutablePath() == nil)
     }
 
     @Test("installation probe receives resolved executable")
@@ -130,6 +131,7 @@ struct ClaudeCodeBackendTests {
             environmentProvider: { [:] }
         )
         #expect(await backend.installationStatus() == .available(version: "2.1-test"))
+        #expect(backend.resolvedExecutablePath() == "/custom/claude")
     }
 
     @Test("permission respond/cancel require an active Claude session")

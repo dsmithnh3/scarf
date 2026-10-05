@@ -86,6 +86,10 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         return await installationProbe(executable)
     }
 
+    nonisolated func resolvedExecutablePath() -> String? {
+        executableResolver()
+    }
+
     nonisolated func models() async throws -> [AgentModel] {
         // Claude model aliases evolve independently of Scarf. Model discovery
         // will move to the control initialize response rather than hard-coding

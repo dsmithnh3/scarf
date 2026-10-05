@@ -83,8 +83,13 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 2 GuardedJSONStore for identity + transcript sidecars (`ee56c946`) — `AgentConversationIdentityStore` and `AgentConversationTranscriptStore` conform to `GuardedSidecarStore` (`refuseForever`, `LocalTransport` default): inspect→mutate→publish RMW, one store per file, one-deep `.bak` on overwrite. Undecodable bytes refuse writes and are quarantined for the human. Claude `can_use_tool` wire encode/decode exists but live round trip remains blocked (`dontAsk`, respond throws, incoming `control_request` not consumed); `.permissions` stays unadvertised. Tests: corrupt-refuse + bak coverage in identity/transcript suites. CI run [37382269610](https://github.com/dsmithnh3/scarf/actions/runs/37382269610) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 4 Claude `can_use_tool` host round trip (wire + coordinator) (`16586ea9`) — `ClaudeCodeBackend` consumes incoming `control_request` / `can_use_tool` → `permissionRequested`; `respond`/`cancelPermission` send `ClaudeControlProtocol.encodePermissionResponse` allow/deny (cancel→deny). Channel stand-in + fake-process controller tests. Launch still `--permission-mode dontAsk`; `.permissions` stays unadvertised until a verified prompting mode matches the bridge. No CLUI UI. Tests: `ClaudeCodeBackendTests` permission suite. CI run [37383730860](https://github.com/dsmithnh3/scarf/actions/runs/37383730860) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 4 Claude host-prompting launch mode (`40c99134`) — replace `dontAsk` with verified Agent SDK host flags (`--permission-mode default` + `--permission-prompt-tool stdio`); advertise Claude `.permissions` behind an explicit launch+round-trip audit test. Hermes unchanged; no CLUI UI; no Codex. Tests: `ClaudeProcessConfigurationTests`, `ClaudeCodeBackendTests` host-prompting audit, ScarfCore capability defaults. CI filter also runs `ClaudeProcessConfigurationTests`. CI run [37385508997](https://github.com/dsmithnh3/scarf/actions/runs/37385508997) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 5 provider installation/version diagnostics — `AgentBackend.resolvedExecutablePath()` + `AgentBackendStatusSnapshot.executablePath`; Claude path/version/not-installed; Hermes local `HermesPathSet.resolveInstalledBinary` / `hermesBinaryIfInstalled` (missing → `.notInstalled`, no guessed path); Settings detail shows `version · path`. No auth/models UI; no Codex. Tests: `AgentProviderDiagnosticsTests`, `HermesPathSetInstalledBinaryTests`, Claude path asserts in `ClaudeCodeBackendTests`. CI filters include `AgentProviderDiagnosticsTests` + `HermesPathSetInstalled`.
 
 ## Current TDD milestone
+
+### Phase 5 — provider installation/version diagnostics
+
+**In progress / pending CI.** Scarf-native provider diagnostics expose executable path discovery, version when installed, and truthful not-installed (nil path + `.notInstalled`) for Claude Code and Hermes. Hermes launch path (`hermesBinary` fallback) unchanged; diagnostics use `hermesBinaryIfInstalled`. Auth/model/capability UI not invented. Hermes remains default; permissions/lifecycle untouched.
 
 ### Phase 4 — Claude host-prompting launch mode
 
@@ -202,7 +207,7 @@ Claude process cleanup is locked without a production change. Conversation close
 2. ~~Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.~~ **Done** — both stores are `GuardedSidecarStore` with `refuseForever`.
 3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI). Multi-Agent Tests [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 4. ~~Integrate Hermes skills/plugins/MCP read-only into the catalog.~~ **Done** — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call `HermesPluginDirectoryScanner`, `SkillsScanner`, and a lightweight config.yaml MCP roster; Claude skill catalog stays empty; no UI. Tests: `AgentExtensionCatalogHermesLoaderTests`. Commits `ce4b7232` / `fda7fcc8`. Multi-Agent+Compile+macOS [37372242630](https://github.com/dsmithnh3/scarf/actions/runs/37372242630); Claude prior [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
-5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next clear slice: Phase 5 Claude installation/version diagnostics (host-prompting launch + `.permissions` advertisement are green).
+5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next clear slice: Phase 5 models / project defaults / health (installation/version diagnostics landed).
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -348,7 +353,7 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 
 - Backend-aware slash command registry + Scarf-native hint query + multi-agent composer menu (`AgentSlashHintMenu`; no CLUI transplant).
 - Live Hermes ACP command discovery into the registry (static Hermes fallback retained).
-- Agent/provider settings for Hermes and Claude Code.
+- Agent/provider settings for Hermes and Claude Code (installation/path/version diagnostics landed; auth/models still open).
 - Project-level backend/model preference.
 - Scarf-native backend indicator/switcher.
 - Transcript rendering for reasoning, tool calls, commands, files, usage, permissions, and errors.

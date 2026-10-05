@@ -28,6 +28,11 @@ public protocol AgentBackend: Sendable {
     var events: AsyncStream<AgentEvent> { get }
 
     func installationStatus() async -> AgentInstallationStatus
+
+    /// Resolved CLI executable path when discoverable. `nil` means not found —
+    /// never a guessed fallback path. Auth/model discovery is out of scope.
+    func resolvedExecutablePath() -> String?
+
     func models() async throws -> [AgentModel]
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession
     func resumeSession(_ session: AgentSession) async throws -> AgentSession
@@ -48,6 +53,9 @@ public protocol AgentBackend: Sendable {
 }
 
 extension AgentBackend {
+    /// Default: no discoverable executable path.
+    public func resolvedExecutablePath() -> String? { nil }
+
     /// Default: no structured history. Concrete backends override when a real
     /// protocol source exists.
     public func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {

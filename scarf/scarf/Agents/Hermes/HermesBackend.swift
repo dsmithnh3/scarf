@@ -7,6 +7,7 @@ import ScarfCore
 /// replacing it. Existing Hermes-only services (memory, cron, gateway, proxy,
 /// configuration, etc.) remain owned by their current implementations.
 actor HermesBackend: SessionScopedAgentBackend {
+    typealias ExecutableResolver = @Sendable () -> String?
     typealias InstallationProbe = @Sendable () async -> AgentInstallationStatus
     typealias ConversationHistoryLoader = @Sendable (ServerContext, String) async throws -> [AgentMessage]
 
@@ -33,6 +34,7 @@ actor HermesBackend: SessionScopedAgentBackend {
     nonisolated let sessionEvents: AsyncStream<AgentBackendEvent>
 
     private let context: ServerContext
+    private let executableResolver: ExecutableResolver
     private let installationProbe: InstallationProbe
     private let conversationHistoryLoader: ConversationHistoryLoader
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
@@ -42,6 +44,7 @@ actor HermesBackend: SessionScopedAgentBackend {
 
     init(
         context: ServerContext = .local,
+        executableResolver: ExecutableResolver? = nil,
         installationProbe: InstallationProbe? = nil,
         conversationHistoryLoader: ConversationHistoryLoader? = nil
     ) {
@@ -56,20 +59,38 @@ actor HermesBackend: SessionScopedAgentBackend {
         self.sessionEvents = AsyncStream { sessionContinuation = $0 }
         self.sessionEventContinuation = sessionContinuation
 
+        let resolver = executableResolver ?? Self.makeExecutableResolver(context: context)
+        self.executableResolver = resolver
+
         if let installationProbe {
             self.installationProbe = installationProbe
         } else {
-            self.installationProbe = Self.makeInstallationProbe(context: context)
+            self.installationProbe = Self.makeInstallationProbe(
+                context: context,
+                executableResolver: resolver
+            )
+        }
+    }
+
+    nonisolated private static func makeExecutableResolver(
+        context: ServerContext
+    ) -> ExecutableResolver {
+        {
+            context.paths.hermesBinaryIfInstalled
         }
     }
 
     nonisolated private static func makeInstallationProbe(
-        context: ServerContext
+        context: ServerContext,
+        executableResolver: @escaping ExecutableResolver
     ) -> InstallationProbe {
         {
+            guard let executable = executableResolver() else {
+                return .notInstalled
+            }
             do {
                 let result = try await context.makeTransport().asyncRunProcess(
-                    executable: context.paths.hermesBinary,
+                    executable: executable,
                     args: ["--version"],
                     stdin: nil,
                     timeout: 10
@@ -88,6 +109,10 @@ actor HermesBackend: SessionScopedAgentBackend {
 
     nonisolated func installationStatus() async -> AgentInstallationStatus {
         await installationProbe()
+    }
+
+    nonisolated func resolvedExecutablePath() -> String? {
+        executableResolver()
     }
 
     nonisolated func models() async throws -> [AgentModel] {
