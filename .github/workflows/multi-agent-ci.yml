@@ -34,10 +34,12 @@ jobs:
       - name: Build ScarfCore library
         run: swift build --target ScarfCore
       - name: Build ScarfCore test target
-        # Build only the ScarfCore test target. A plain `swift test` also
-        # builds the unrelated scarf-projects-mcp executable/test graph,
-        # which currently has upstream Swift 6.3 source errors.
+        # Build only the ScarfCore test target. This keeps the compile gate
+        # isolated from unrelated MCP test products while still proving every
+        # ScarfCore test source compiles against the current shared domain.
         run: swift build --target ScarfCoreTests
+      - name: Run project agent preference tests
+        run: swift test --filter ProjectAgentPreferenceStoreTests
 
   macos-build:
     name: macOS App Build
