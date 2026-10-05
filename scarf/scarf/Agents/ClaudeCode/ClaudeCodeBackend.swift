@@ -91,9 +91,10 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     }
 
     nonisolated func models() async throws -> [AgentModel] {
-        // Claude model aliases evolve independently of Scarf. Model discovery
-        // will move to the control initialize response rather than hard-coding
-        // a list that can go stale.
+        // BLOCKED: ClaudeControlProtocol has no verified control-initialize /
+        // available-models parser yet (only can_use_tool + interrupt). Do not
+        // hard-code aliases that go stale; keep empty until a discovery path
+        // is verified end-to-end.
         []
     }
 

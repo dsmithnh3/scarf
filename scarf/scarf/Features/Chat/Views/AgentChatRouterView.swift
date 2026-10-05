@@ -227,6 +227,21 @@ private struct AgentProjectChatView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let permission = viewModel.permissionPresentation {
+                AgentPermissionCard(
+                    presentation: permission,
+                    onRespond: { request, optionID in
+                        Task { try? await viewModel.respond(to: request, optionID: optionID) }
+                    },
+                    onCancel: { request in
+                        Task { try? await viewModel.cancelPermission(request) }
+                    }
+                )
+                .id(permission.id)
+                .padding(.horizontal, ScarfSpace.s3)
+                .padding(.top, ScarfSpace.s2)
+            }
+
             if viewModel.isSlashHintMenuVisible {
                 AgentSlashHintMenu(
                     presentation: viewModel.slashHintPresentation,

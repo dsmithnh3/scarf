@@ -116,9 +116,10 @@ actor HermesBackend: SessionScopedAgentBackend {
     }
 
     nonisolated func models() async throws -> [AgentModel] {
-        // Hermes's existing model/catalog UI remains authoritative during the
-        // first migration phase. The generic catalog can be wired later without
-        // changing chat/session behavior.
+        // BLOCKED for multi-agent: Rich Chat ModelCatalogService /
+        // NousModelCatalogService remain authoritative. Do not mirror or invent
+        // a parallel list here until a verified AgentBackend discovery bridge
+        // exists.
         []
     }
 

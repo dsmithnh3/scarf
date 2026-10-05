@@ -68,6 +68,12 @@ final class AgentChatViewModel {
         slashHintPresentation.hints
     }
 
+    /// FIFO head of the permission coordinator, if any. Drives the Scarf-native
+    /// permission card in multi-agent project chat.
+    var permissionPresentation: AgentPermissionPresentation? {
+        AgentPermissionPresenter.presentation(from: state)
+    }
+
     func start() async {
         guard !isStarted else { return }
         startupError = nil
