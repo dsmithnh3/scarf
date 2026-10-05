@@ -20,7 +20,7 @@ struct ClaudeControlProtocolTests {
     @Test("success control response is correlated by request id")
     func successDecoding() throws {
         let line = #"{"type":"control_response","response":{"subtype":"success","request_id":"req_1","response":{"still_queued":[]}}}"#
-        let response = try #require(ClaudeControlProtocol.decodeResponse(line))
+        let response = try #require(try ClaudeControlProtocol.decodeResponse(line))
         #expect(response.requestID == "req_1")
         #expect(response.isSuccess)
         #expect(response.errorMessage == nil)
@@ -29,7 +29,7 @@ struct ClaudeControlProtocolTests {
     @Test("error control response preserves the error message")
     func errorDecoding() throws {
         let line = #"{"type":"control_response","response":{"subtype":"error","request_id":"req_2","error":"not supported"}}"#
-        let response = try #require(ClaudeControlProtocol.decodeResponse(line))
+        let response = try #require(try ClaudeControlProtocol.decodeResponse(line))
         #expect(response.requestID == "req_2")
         #expect(!response.isSuccess)
         #expect(response.errorMessage == "not supported")
@@ -52,7 +52,7 @@ struct ClaudeControlProtocolTests {
     @Test("can_use_tool control request is decoded for future host approval UI")
     func permissionRequestDecoding() throws {
         let line = #"{"type":"control_request","request_id":"req_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/a.txt","content":"hello"}}}"#
-        let request = try #require(ClaudeControlProtocol.decodePermissionRequest(line))
+        let request = try #require(try ClaudeControlProtocol.decodePermissionRequest(line))
         #expect(request.requestID == "req_perm")
         #expect(request.toolName == "Write")
         #expect(request.inputJSON.contains("file_path"))
