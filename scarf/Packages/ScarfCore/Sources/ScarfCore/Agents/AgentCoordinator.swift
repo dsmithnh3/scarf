@@ -4,36 +4,46 @@ public enum AgentCoordinatorError: Error, Equatable, Sendable {
     case backendUnavailable(AgentID)
 }
 
-/// An event forwarded by `AgentCoordinator` with its originating backend.
+/// An event forwarded by `AgentCoordinator` with its originating backend and,
+/// when available, the session that produced it.
 ///
 /// `AgentEvent` itself intentionally stays backend-neutral. This envelope gives
 /// higher-level conversation controllers enough routing context to prevent an
-/// event from one registered runtime from mutating another runtime's UI state.
+/// event from one registered runtime or session from mutating another UI state.
 public struct AgentRoutedEvent: Equatable, Sendable {
     public let sequence: UInt64
     public let backendID: AgentID
+    public let sessionID: String?
     public let event: AgentEvent
 
-    public init(sequence: UInt64, backendID: AgentID, event: AgentEvent) {
+    public init(
+        sequence: UInt64,
+        backendID: AgentID,
+        sessionID: String? = nil,
+        event: AgentEvent
+    ) {
         self.sequence = sequence
         self.backendID = backendID
+        self.sessionID = sessionID
         self.event = event
     }
 }
 
 /// Routes backend-neutral agent operations to the selected runtime and merges
-/// backend event streams into one application-facing stream.
+/// backend event streams into application-facing streams.
 public actor AgentCoordinator {
     /// Compatibility stream used by existing generic consumers.
     public nonisolated let events: AsyncStream<AgentEvent>
 
-    /// Routed stream for consumers that must distinguish simultaneously
-    /// registered backends.
+    /// Compatibility routed stream. New conversation controllers should use
+    /// `subscribeToRoutedEvents()` so every window receives an independent
+    /// subscription rather than sharing one iterator/buffer.
     public nonisolated let routedEvents: AsyncStream<AgentRoutedEvent>
 
     private let registry: AgentRegistry
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let routedEventContinuation: AsyncStream<AgentRoutedEvent>.Continuation
+    private var routedEventSubscribers: [UUID: AsyncStream<AgentRoutedEvent>.Continuation] = [:]
     private var forwardingTasks: [AgentID: Task<Void, Never>] = [:]
     private var routedEventSequence: UInt64 = 0
 
@@ -54,11 +64,25 @@ public actor AgentCoordinator {
         await registry.register(backend)
 
         let backendID = backend.id
-        let stream = backend.events
-        forwardingTasks[backendID] = Task { [weak self] in
-            for await event in stream {
-                guard !Task.isCancelled else { break }
-                await self?.forward(event, from: backendID)
+        if let scopedBackend = backend as? any SessionScopedAgentBackend {
+            let stream = scopedBackend.sessionEvents
+            forwardingTasks[backendID] = Task { [weak self] in
+                for await scopedEvent in stream {
+                    guard !Task.isCancelled else { break }
+                    await self?.forward(
+                        scopedEvent.event,
+                        from: backendID,
+                        sessionID: scopedEvent.sessionID
+                    )
+                }
+            }
+        } else {
+            let stream = backend.events
+            forwardingTasks[backendID] = Task { [weak self] in
+                for await event in stream {
+                    guard !Task.isCancelled else { break }
+                    await self?.forward(event, from: backendID, sessionID: nil)
+                }
             }
         }
     }
@@ -69,6 +93,24 @@ public actor AgentCoordinator {
 
     public func availableBackends() async -> [any AgentBackend] {
         await registry.availableBackends()
+    }
+
+    /// Creates an independent routed-event subscription for one consumer.
+    ///
+    /// This is the multi-window-safe observation seam. Every subscription gets
+    /// each subsequently forwarded event; cancellation removes only that
+    /// subscriber and does not affect other conversations.
+    public func subscribeToRoutedEvents() -> AsyncStream<AgentRoutedEvent> {
+        let subscriberID = UUID()
+        var continuation: AsyncStream<AgentRoutedEvent>.Continuation!
+        let stream = AsyncStream<AgentRoutedEvent>(bufferingPolicy: .bufferingNewest(256)) {
+            continuation = $0
+        }
+        routedEventSubscribers[subscriberID] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeRoutedEventSubscriber(subscriberID) }
+        }
+        return stream
     }
 
     public func createSession(
@@ -130,14 +172,27 @@ public actor AgentCoordinator {
         return backend
     }
 
-    private func forward(_ event: AgentEvent, from backendID: AgentID) {
+    private func removeRoutedEventSubscriber(_ id: UUID) {
+        routedEventSubscribers.removeValue(forKey: id)
+    }
+
+    private func forward(
+        _ event: AgentEvent,
+        from backendID: AgentID,
+        sessionID: String?
+    ) {
         routedEventSequence &+= 1
         let routed = AgentRoutedEvent(
             sequence: routedEventSequence,
             backendID: backendID,
+            sessionID: sessionID,
             event: event
         )
+
         routedEventContinuation.yield(routed)
+        for continuation in routedEventSubscribers.values {
+            continuation.yield(routed)
+        }
         eventContinuation.yield(event)
     }
 }
