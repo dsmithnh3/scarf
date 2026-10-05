@@ -75,9 +75,17 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ## Current TDD milestone
 
+### Phase 3 — backend-aware slash command registry (model slice)
+
+**IN PROGRESS — smallest ScarfCore model.** `AgentSlashCommandDescriptor` + `AgentSlashCommandRegistry` merge Scarf-local and backend-scoped commands with capability gating, first-wins name dedupe, and case-insensitive name/alias prefix matching. Separate from `HermesSlashCommand` (ACP/project menu) and `AgentCommand` (shell activity). No CLUI UI transplant, no composer wiring yet. Tests: `AgentSlashCommandRegistryTests`. Hermes remains the default route. Claude permissions stay unadvertised.
+
+### Phase 2 — Claude structured history (blocked)
+
+**BLOCKED pending a verified protocol or file source.** Inspected `ClaudeCodeBackend`, `ClaudeProcessConfiguration` (`--resume` / `--session-id` only), `ClaudeProcessManager` / `ProcessACPChannel` (stream-json send/receive), and `ClaudeStreamDecoder` (live event lines only). `fetchConversationHistory` correctly returns `[]` with an explicit comment that Scarf has no verified structured transcript API. Do **not** invent session-file parsers or advertise a history capability. Scarf durable transcripts remain preferred on Claude restore. Optional alternative later: GuardedJSONStore for identity/transcript sidecars.
+
 ### Phase 2 — fixture state.db end-to-end restore
 
-**GREEN for `restorePersistedSession` through a throwaway Hermes `state.db`.** Identity restore + `HermesAgentConversationHistory` fetch + role+content reconcile + Scarf durable activity retention are locked by `AgentConversationHermesStateDBRestoreTests` (temp SQLite fixture; no shipped binary). No production code change. Hermes remains the default route. Claude permission capability stays unset. Claude structured history still deferred until a verified protocol source exists. CI green: [37349277921](https://github.com/dsmithnh3/scarf/actions/runs/37349277921).
+**GREEN for `restorePersistedSession` through a throwaway Hermes `state.db`.** Identity restore + `HermesAgentConversationHistory` fetch + role+content reconcile + Scarf durable activity retention are locked by `AgentConversationHermesStateDBRestoreTests` (temp SQLite fixture; no shipped binary). No production code change. Hermes remains the default route. Claude permission capability stays unset. Claude structured history blocked (see above). CI green: [37349277921](https://github.com/dsmithnh3/scarf/actions/runs/37349277921) (docs cite [37350728319](https://github.com/dsmithnh3/scarf/actions/runs/37350728319)).
 
 ### Phase 2 — cross-source turn matching (role + content)
 
@@ -85,7 +93,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ### Phase 2 — Hermes structured history source (state.db)
 
-**GREEN for read-only Hermes `state.db` → `[AgentMessage]` behind `HermesBackend.fetchConversationHistory`.** Uses existing C3 read-only SQL; does not start ACP or change resume/lifecycle. Deterministic message ids are reconciled with Scarf UUIDs via role+content matching (slice above). Claude still returns `[]`. No history capability flag. CI green: [37342752724](https://github.com/dsmithnh3/scarf/actions/runs/37342752724). Fixture e2e restore covered above; Claude protocol source remains next.
+**GREEN for read-only Hermes `state.db` → `[AgentMessage]` behind `HermesBackend.fetchConversationHistory`.** Uses existing C3 read-only SQL; does not start ACP or change resume/lifecycle. Deterministic message ids are reconciled with Scarf UUIDs via role+content matching (slice above). Claude still returns `[]`. No history capability flag. CI green: [37342752724](https://github.com/dsmithnh3/scarf/actions/runs/37342752724). Fixture e2e restore covered above; Claude protocol source remains **blocked** (see Current TDD milestone).
 
 ### Phase 2 — backend-history fetch wiring
 
@@ -139,9 +147,10 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. Claude structured history when a verified protocol or file source exists (do not invent).
-2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
-3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
+1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
+2. Backend-aware slash command registry model → Scarf-native hints (no CLUI UI transplant); wire sources after the model is green.
+3. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
+4. Keep the CLUI adoption order unchanged: Claude history stays blocked; proceed with command registry / skills/MCP / permissions only behind truthful capabilities; Codex remains later.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -269,18 +278,19 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Cross-source turn matching (role + exact content after id pass; Scarf wins; activity retained).
 - [x] Fixture `state.db` end-to-end restore through `restorePersistedSession` (`AgentConversationHermesStateDBRestoreTests`).
 - [ ] Optional GuardedJSONStore adoption for the identity/transcript sidecars (single store per file; no parallel writer).
-- [ ] Claude structured history when a verified protocol/file source exists.
+- [ ] Claude structured history when a verified protocol/file source exists (**blocked** — no verified source found; do not invent).
 
 ### Phase 2 — adopt high-value CLUI patterns
 
 - Compare/port provider normalization improvements.
-- Build backend-aware slash command registry + Scarf-native command hints.
+- Build backend-aware slash command registry + Scarf-native command hints (model slice in progress under Phase 3 checklist / `AgentSlashCommandRegistry`).
 - Add unified skills/plugins/MCP catalog abstractions while preserving Hermes.
 - Introduce generic permission state machine with truthful capability gating.
 - Improve session persistence/tool-result/usage merge semantics.
 
 ### Phase 3 — Scarf-native setup and UX
 
+- Backend-aware slash command registry model (`AgentSlashCommandRegistry`) then Scarf-native hints (no CLUI UI transplant).
 - Agent/provider settings for Hermes and Claude Code.
 - Project-level backend/model preference.
 - Scarf-native backend indicator/switcher.

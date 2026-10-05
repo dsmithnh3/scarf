@@ -618,12 +618,12 @@ Each can be evaluated independently after multi-agent foundations are stable.
 - [x] Implement first real Hermes structured history source behind `fetchConversationHistory` (`HermesAgentConversationHistory` / state.db; Claude still `[]`).
 - [x] Decide cross-source turn matching when backend ids ≠ Scarf UUIDs (role + exact content after id pass).
 - [x] Fixture `state.db` end-to-end restore through `restorePersistedSession` (`AgentConversationHermesStateDBRestoreTests`).
-- [ ] Claude structured history when a verified protocol/file source exists.
+- [ ] Claude structured history when a verified protocol/file source exists (**blocked** — `--resume` / stream-json only; no verified `[AgentMessage]` source; do not invent parsers).
 - [ ] Define migration strategy for persisted session schema.
 
 ### Phase 3 — slash commands and extensions
 
-- [ ] Define backend-aware Scarf command registry.
+- [x] Define backend-aware Scarf command registry model (`AgentSlashCommandDescriptor` / `AgentSlashCommandRegistry`; capability + backend gating; no UI yet).
 - [ ] Adapt CLUI slash routing concepts.
 - [ ] Build Scarf-native slash hint UI.
 - [ ] Define unified extension catalog model.
