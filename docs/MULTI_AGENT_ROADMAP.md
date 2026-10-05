@@ -71,8 +71,13 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 2 backend-history fetch wiring (`e1af06be`) — `AgentBackend.fetchConversationHistory(for:)` (default `[]`) + `AgentCoordinator` route. `restorePersistedSession(backendHistory:)` now defaults to `nil` and fetches after identity resume; explicit arrays remain test overrides. Hermes ACP `session/load` only replays streaming chunks; Claude `--resume` has no structured history API yet — both backends return `[]` without advertising a history capability. Fake-backend tests prove fetch + reconcile. GuardedJSONStore / content-role matching remain deferred. CI run [37340873436](https://github.com/dsmithnh3/scarf/actions/runs/37340873436) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 2 Hermes state.db history source (first slice) (`7c240430`) — `HermesAgentConversationHistory` read-only maps `HermesDataService.fetchMessages` rows to `[AgentMessage]` with deterministic ids from `(sessionID, Hermes row id)`. `HermesBackend.fetchConversationHistory` uses this path; Claude still returns `[]`. No history capability advertised. CI run [37342752724](https://github.com/dsmithnh3/scarf/actions/runs/37342752724) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
 - Phase 2 cross-source turn matching (role + content) (`1a6f6512`) — `AgentConversationTranscript.reconciling(withBackendHistory:)` keeps merge-by-id as the first pass, then matches unmatched backend messages by **role + exact content** (greedy against unmatched Scarf turns). Scarf ids/content/activity win on match; truly distinct backend messages still append. Closes the Hermes-deterministic-id vs Scarf-UUID duplicate gap without a second conversation state system. CI run [37347757216](https://github.com/dsmithnh3/scarf/actions/runs/37347757216) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
+- Phase 2 fixture `state.db` end-to-end restore (`95f60cd0`) — `AgentConversationHermesStateDBRestoreTests` builds a throwaway Hermes home/`state.db`, persists Scarf identity + durable transcript (including activity), and drives `restorePersistedSession()` through `HermesAgentConversationHistory.fetchMessages` so role+content matching keeps Scarf UUIDs/activity while appending Hermes-only turns. No production glue. CI run [37349277921](https://github.com/dsmithnh3/scarf/actions/runs/37349277921) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
 
 ## Current TDD milestone
+
+### Phase 2 — fixture state.db end-to-end restore
+
+**GREEN for `restorePersistedSession` through a throwaway Hermes `state.db`.** Identity restore + `HermesAgentConversationHistory` fetch + role+content reconcile + Scarf durable activity retention are locked by `AgentConversationHermesStateDBRestoreTests` (temp SQLite fixture; no shipped binary). No production code change. Hermes remains the default route. Claude permission capability stays unset. Claude structured history still deferred until a verified protocol source exists. CI green: [37349277921](https://github.com/dsmithnh3/scarf/actions/runs/37349277921).
 
 ### Phase 2 — cross-source turn matching (role + content)
 
@@ -80,7 +85,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ### Phase 2 — Hermes structured history source (state.db)
 
-**GREEN for read-only Hermes `state.db` → `[AgentMessage]` behind `HermesBackend.fetchConversationHistory`.** Uses existing C3 read-only SQL; does not start ACP or change resume/lifecycle. Deterministic message ids are reconciled with Scarf UUIDs via role+content matching (slice above). Claude still returns `[]`. No history capability flag. CI green: [37342752724](https://github.com/dsmithnh3/scarf/actions/runs/37342752724). Next: optional end-to-end restore tests with real fixture DB; Claude protocol source.
+**GREEN for read-only Hermes `state.db` → `[AgentMessage]` behind `HermesBackend.fetchConversationHistory`.** Uses existing C3 read-only SQL; does not start ACP or change resume/lifecycle. Deterministic message ids are reconciled with Scarf UUIDs via role+content matching (slice above). Claude still returns `[]`. No history capability flag. CI green: [37342752724](https://github.com/dsmithnh3/scarf/actions/runs/37342752724). Fixture e2e restore covered above; Claude protocol source remains next.
 
 ### Phase 2 — backend-history fetch wiring
 
@@ -134,10 +139,9 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. Optional end-to-end restore test with fixture Hermes `state.db` through `restorePersistedSession`.
-2. Claude structured history when a verified protocol or file source exists (do not invent).
-3. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
-4. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
+1. Claude structured history when a verified protocol or file source exists (do not invent).
+2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
+3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -263,8 +267,8 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Deeper transcript activity fidelity (`toolCalls` / commands / fileChanges / reasoningBlocks on the same durable snapshot; result-id status merge).
 - [x] Backend-history reconciliation smallest contract (`reconciling(withBackendHistory:)` — empty-backend prefers Scarf; id merge; Scarf activity retained).
 - [x] Cross-source turn matching (role + exact content after id pass; Scarf wins; activity retained).
+- [x] Fixture `state.db` end-to-end restore through `restorePersistedSession` (`AgentConversationHermesStateDBRestoreTests`).
 - [ ] Optional GuardedJSONStore adoption for the identity/transcript sidecars (single store per file; no parallel writer).
-- [ ] Optional fixture `state.db` end-to-end restore through `restorePersistedSession`.
 - [ ] Claude structured history when a verified protocol/file source exists.
 
 ### Phase 2 — adopt high-value CLUI patterns
