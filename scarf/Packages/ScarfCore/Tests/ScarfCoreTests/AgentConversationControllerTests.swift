@@ -103,7 +103,7 @@ struct AgentConversationControllerTests {
         #expect(state.isRunning)
     }
 
-    @Test("coordinator events reduce into conversation state")
+    @Test("coordinator events reduce into observable conversation state")
     func reducesEvents() async throws {
         let coordinator = AgentCoordinator()
         let backend = RecordingBackend()
@@ -114,14 +114,21 @@ struct AgentConversationControllerTests {
             configuration: AgentSessionConfiguration()
         )
 
+        let completedState = Task<AgentConversationState?, Never> {
+            for await state in controller.stateUpdates {
+                if state.stopReason == "end_turn" {
+                    return state
+                }
+            }
+            return nil
+        }
+
         await backend.emit(.textStarted)
         await backend.emit(.textDelta("Hello from Claude"))
         await backend.emit(.textCompleted)
         await backend.emit(.turnCompleted(stopReason: "end_turn"))
 
-        await controller.waitForEventsToDrain()
-        let state = await controller.stateSnapshot()
-
+        let state = try #require(await completedState.value)
         #expect(state.messages.last?.role == .assistant)
         #expect(state.messages.last?.content == "Hello from Claude")
         #expect(state.stopReason == "end_turn")
