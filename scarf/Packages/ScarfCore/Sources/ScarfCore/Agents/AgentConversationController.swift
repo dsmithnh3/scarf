@@ -17,7 +17,13 @@ public actor AgentConversationController {
     /// asynchronous backend/coordinator queues have drained.
     public nonisolated let stateUpdates: AsyncStream<AgentConversationState>
 
+    /// Stable Scarf-owned key for this conversation (window/tab). When set with
+    /// an ``identityStore``, successful start/resume writes backend+session id
+    /// so a relaunch can restore without inventing a second state system.
+    public nonisolated let conversationID: String?
+
     private let coordinator: AgentCoordinator
+    private let identityStore: (any AgentConversationIdentityPersisting)?
     private let stateContinuation: AsyncStream<AgentConversationState>.Continuation
     private var state = AgentConversationState()
     private var activeSession: AgentSession?
@@ -26,8 +32,14 @@ public actor AgentConversationController {
     private var lastConsumedSequence: UInt64 = 0
     private var routedSequenceWaiters: [(UInt64, CheckedContinuation<Void, Never>)] = []
 
-    public init(coordinator: AgentCoordinator) {
+    public init(
+        coordinator: AgentCoordinator,
+        conversationID: String? = nil,
+        identityStore: (any AgentConversationIdentityPersisting)? = nil
+    ) {
         self.coordinator = coordinator
+        self.conversationID = conversationID
+        self.identityStore = identityStore
 
         var continuation: AsyncStream<AgentConversationState>.Continuation!
         self.stateUpdates = AsyncStream(bufferingPolicy: .bufferingNewest(32)) {
@@ -73,6 +85,7 @@ public actor AgentConversationController {
         activeSession = session
         state = AgentConversationState()
         state.apply(.sessionStarted(session))
+        persistActiveIdentity(session)
         publishState()
         return session
     }
@@ -111,8 +124,21 @@ public actor AgentConversationController {
         activeSession = resumed
         state = AgentConversationState()
         state.apply(.sessionStarted(resumed))
+        persistActiveIdentity(resumed)
         publishState()
         return resumed
+    }
+
+    /// Reloads the persisted backend/session identity for this conversation
+    /// and resumes it. Returns `nil` when no identity is stored.
+    @discardableResult
+    public func restorePersistedSession() async throws -> AgentSession? {
+        guard let conversationID,
+              let identityStore,
+              let identity = try identityStore.load(conversationID: conversationID) else {
+            return nil
+        }
+        return try await resumeSession(identity.makeSession())
     }
 
     public func send(_ content: String) async throws {
@@ -170,6 +196,7 @@ public actor AgentConversationController {
         try await coordinator.close(session: session)
         activeSession = nil
         activeBackendID = nil
+        clearPersistedIdentity()
         state.apply(.sessionClosed)
         publishState()
     }
@@ -271,6 +298,32 @@ public actor AgentConversationController {
             )
         )
         publishState()
+    }
+
+    private func persistActiveIdentity(_ session: AgentSession) {
+        guard let conversationID, let identityStore else { return }
+        do {
+            try identityStore.save(
+                AgentConversationIdentity(conversationID: conversationID, session: session)
+            )
+        } catch {
+            surfaceConversationError(
+                code: "conversation.identity-persist-failed",
+                underlying: error
+            )
+        }
+    }
+
+    private func clearPersistedIdentity() {
+        guard let conversationID, let identityStore else { return }
+        do {
+            try identityStore.remove(conversationID: conversationID)
+        } catch {
+            surfaceConversationError(
+                code: "conversation.identity-clear-failed",
+                underlying: error
+            )
+        }
     }
 
     private func resumeRoutedSequenceWaiters() {

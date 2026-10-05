@@ -604,10 +604,10 @@ Each can be evaluated independently after multi-agent foundations are stable.
 ### Phase 2 — sessions and provider semantics
 
 - [ ] Compare CLUI session persistence with Scarf conversation state.
-- [ ] Define persisted backend/session identity.
+- [x] Define persisted backend/session identity (`AgentConversationIdentity` / `AgentConversationIdentityStore`).
 - [ ] Port useful tool-result merge semantics/tests.
 - [ ] Normalize usage accounting.
-- [ ] Add restart/resume tests.
+- [x] Add restart/resume identity tests (`restorePersistedSession`).
 - [ ] Define migration strategy for persisted session schema.
 
 ### Phase 3 — slash commands and extensions

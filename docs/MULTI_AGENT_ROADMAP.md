@@ -63,8 +63,15 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - `9389a29a` — Claude Process Tests CI job. First run failed compiling scarfTests because `try #require(throwingCall)` does not compile under Xcode 26.6; follow-up fixes the Claude control protocol tests so the host-app suite can build.
 - `2513c302` — Claude divergent system-init session ids are aligned to Scarf's runtime session id (`claudeReportedSessionID` metadata). Installation/resume not-installed paths and resume-of-active identity covered.
 - `9a15aaa1` — failed create/resume and unexpected Claude process exit surface through `AgentConversationState.error`. CI run [37327549215](https://github.com/dsmithnh3/scarf/actions/runs/37327549215) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests (12/12 suite cases).
+- Phase 2 persistence foundation — `AgentConversationIdentity` + file-backed `AgentConversationIdentityStore` persist `conversationID → (backendID, sessionID)`. `AgentConversationController` optionally wires a store: start/resume save, close removes, `restorePersistedSession()` reloads across a new store/controller instance. Not an extension of Hermes `SessionProjectMap`. Live transcript state stays in `AgentConversationState`.
 
 ## Current TDD milestone
+
+### Phase 2 — persist backend id + session id
+
+**GREEN for the identity persistence slice.** Temp-directory reload boundary proves save → new store instance → load. Controller start/resume persist; close clears; restore resumes the stored backend+session without a second conversation state system.
+
+Hermes remains the default route. Claude permission capability stays unset.
 
 ### Replacement and close lifecycle
 
@@ -88,8 +95,8 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. Confirm Claude Process Tests CI is green on the latest head (close/cancel + identity + unexpected-exit cases).
-2. Begin Phase 2 persistence foundations: persist backend id + session id (smallest TDD slice).
+1. Wire production callers to `HermesPathSet.agentConversationIdentities` (GuardedJSONStore adoption optional follow-up).
+2. Session resume/history fidelity beyond identity (transcript merge, usage).
 3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
@@ -210,7 +217,8 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Session resume identity: Scarf routing id wins when Claude system init reports a divergent `session_id`; resume-of-active keeps identity.
 - [x] Capability contract audit. Claude permissions remain unimplemented and unadvertised (respond + cancelPermission).
 - [x] Process failure surfacing via existing `AgentConversationState.error` (failed create/resume + unexpected exit).
-- [ ] Session resume/history fidelity beyond identity cleanup (Phase 2 persistence).
+- [x] Persist backend id + session id (`AgentConversationIdentityStore` + controller restore seam).
+- [ ] Session resume/history fidelity beyond identity (transcript / tool-result merge).
 
 ### Phase 2 — adopt high-value CLUI patterns
 
