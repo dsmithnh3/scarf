@@ -65,8 +65,15 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - `9a15aaa1` — failed create/resume and unexpected Claude process exit surface through `AgentConversationState.error`. CI run [37327549215](https://github.com/dsmithnh3/scarf/actions/runs/37327549215) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests (12/12 suite cases).
 - Phase 2 persistence foundation (`67b3ac44`) — `AgentConversationIdentity` + file-backed `AgentConversationIdentityStore` persist `conversationID → (backendID, sessionID)`. `AgentConversationController` optionally wires a store: start/resume save, close removes, `restorePersistedSession()` reloads across a new store/controller instance. Not an extension of Hermes `SessionProjectMap`. Live transcript state stays in `AgentConversationState`. CI run [37329860714](https://github.com/dsmithnh3/scarf/actions/runs/37329860714) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 2 production wiring (`5d9d21ea`) — `AgentConversationController.makePersisting` + `startOrRestorePersistedSession` inject `AgentConversationIdentityStore` at the `HermesPathSet.agentConversationIdentities` path (`{home}/scarf/agent_conversation_identities.json`). `AgentRuntime.conversationController(for:)` uses project id as conversation key; `AgentChatViewModel.start()` prefers restore then create. GuardedJSONStore adoption remains an optional follow-up (store still uses atomic file writes; no parallel store). CI run [37332041624](https://github.com/dsmithnh3/scarf/actions/runs/37332041624) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 2 transcript fidelity (first durable slice) — `AgentConversationTranscript` + file-backed `AgentConversationTranscriptStore` persist `conversationID → (messages, toolResults, usage)`. Controller saves after send/event reduction, clears on start/close, and `restorePersistedSession()` rehydrates into `AgentConversationState` after identity resume. Production path: `HermesPathSet.agentConversationTranscripts` / `makePersisting`. Live drafts/permissions/toolCalls remain reducer-only. Hermes remains default; Claude permissions stay unadvertised.
 
 ## Current TDD milestone
+
+### Phase 2 — transcript / resume fidelity (first durable slice)
+
+**GREEN for durable message/tool-result/usage restore.** Temp-directory reload boundary proves save → new store/controller → restore identity **and** rehydrate transcript fields. `startSession` clears prior transcript for that conversation; `close` removes it. Full tool-call/command/file/reasoning merge and backend-history reconciliation remain deferred. Optional GuardedJSONStore adoption remains a later follow-up.
+
+Hermes remains the default route. Claude permission capability stays unset.
 
 ### Phase 2 — persist backend id + session id
 
@@ -96,8 +103,8 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. Session resume/history fidelity beyond identity (transcript merge, tool-result/usage).
-2. Optional GuardedJSONStore adoption for `AgentConversationIdentityStore` (transport-safe RMW); keep a single store.
+1. Deeper resume/history fidelity (tool-call/command/file/reasoning merge; backend-history reconciliation beyond Scarf-owned durable snapshot).
+2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
 3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
@@ -220,8 +227,9 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Process failure surfacing via existing `AgentConversationState.error` (failed create/resume + unexpected exit).
 - [x] Persist backend id + session id (`AgentConversationIdentityStore` + controller restore seam).
 - [x] Wire production callers (`AgentRuntime` / `makePersisting` / `startOrRestorePersistedSession` → `HermesPathSet.agentConversationIdentities`).
-- [ ] Session resume/history fidelity beyond identity (transcript / tool-result merge).
-- [ ] Optional GuardedJSONStore adoption for the identity sidecar (single store; no parallel writer).
+- [x] Session resume/history fidelity first durable slice (`AgentConversationTranscriptStore` — messages / toolResults / usage across reload).
+- [ ] Deeper transcript merge (toolCalls/commands/files/reasoning; backend-history reconciliation).
+- [ ] Optional GuardedJSONStore adoption for the identity/transcript sidecars (single store per file; no parallel writer).
 
 ### Phase 2 — adopt high-value CLUI patterns
 

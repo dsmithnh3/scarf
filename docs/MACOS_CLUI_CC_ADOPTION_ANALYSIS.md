@@ -606,9 +606,11 @@ Each can be evaluated independently after multi-agent foundations are stable.
 - [ ] Compare CLUI session persistence with Scarf conversation state.
 - [x] Define persisted backend/session identity (`AgentConversationIdentity` / `AgentConversationIdentityStore`).
 - [x] Wire production callers to HermesPathSet identity path (`makePersisting` / `AgentRuntime` / `startOrRestorePersistedSession`).
-- [ ] Port useful tool-result merge semantics/tests.
-- [ ] Normalize usage accounting.
+- [x] Persist/restore durable transcript slice (`AgentConversationTranscriptStore` — messages / toolResults / usage).
+- [ ] Port useful tool-result merge semantics/tests (beyond Scarf-owned snapshot restore).
+- [ ] Normalize usage accounting (beyond snapshot restore).
 - [x] Add restart/resume identity tests (`restorePersistedSession`).
+- [x] Add restart/resume transcript fidelity tests (`AgentConversationTranscriptFidelityTests`).
 - [ ] Define migration strategy for persisted session schema.
 
 ### Phase 3 — slash commands and extensions

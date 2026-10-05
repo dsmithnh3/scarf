@@ -24,6 +24,7 @@ public actor AgentConversationController {
 
     private let coordinator: AgentCoordinator
     private let identityStore: (any AgentConversationIdentityPersisting)?
+    private let transcriptStore: (any AgentConversationTranscriptPersisting)?
     private let stateContinuation: AsyncStream<AgentConversationState>.Continuation
     private var state = AgentConversationState()
     private var activeSession: AgentSession?
@@ -35,11 +36,13 @@ public actor AgentConversationController {
     public init(
         coordinator: AgentCoordinator,
         conversationID: String? = nil,
-        identityStore: (any AgentConversationIdentityPersisting)? = nil
+        identityStore: (any AgentConversationIdentityPersisting)? = nil,
+        transcriptStore: (any AgentConversationTranscriptPersisting)? = nil
     ) {
         self.coordinator = coordinator
         self.conversationID = conversationID
         self.identityStore = identityStore
+        self.transcriptStore = transcriptStore
 
         var continuation: AsyncStream<AgentConversationState>.Continuation!
         self.stateUpdates = AsyncStream(bufferingPolicy: .bufferingNewest(32)) {
@@ -49,8 +52,10 @@ public actor AgentConversationController {
         continuation.yield(state)
     }
 
-    /// App/bootstrap construction: persists identity at the Hermes-home
-    /// production path (`HermesPathSet.agentConversationIdentities`).
+    /// App/bootstrap construction: persists identity + durable transcript at
+    /// the Hermes-home production paths
+    /// (`HermesPathSet.agentConversationIdentities` /
+    /// `agentConversationTranscripts`).
     public static func makePersisting(
         coordinator: AgentCoordinator,
         conversationID: String,
@@ -59,7 +64,8 @@ public actor AgentConversationController {
         AgentConversationController(
             coordinator: coordinator,
             conversationID: conversationID,
-            identityStore: AgentConversationIdentityStore(hermesHome: hermesHome)
+            identityStore: AgentConversationIdentityStore(hermesHome: hermesHome),
+            transcriptStore: AgentConversationTranscriptStore(hermesHome: hermesHome)
         )
     }
 
@@ -99,6 +105,9 @@ public actor AgentConversationController {
         activeSession = session
         state = AgentConversationState()
         state.apply(.sessionStarted(session))
+        // A deliberate new start replaces any prior transcript for this
+        // conversation id; resume/restore rehydrates instead.
+        clearPersistedTranscript()
         persistActiveIdentity(session)
         publishState()
         return session
@@ -145,6 +154,9 @@ public actor AgentConversationController {
 
     /// Reloads the persisted backend/session identity for this conversation
     /// and resumes it. Returns `nil` when no identity is stored.
+    ///
+    /// After resume, rehydrates any durable transcript snapshot so a relaunch
+    /// restores messages/toolResults/usage without a second state system.
     @discardableResult
     public func restorePersistedSession() async throws -> AgentSession? {
         guard let conversationID,
@@ -152,7 +164,9 @@ public actor AgentConversationController {
               let identity = try identityStore.load(conversationID: conversationID) else {
             return nil
         }
-        return try await resumeSession(identity.makeSession())
+        let session = try await resumeSession(identity.makeSession())
+        hydratePersistedTranscript()
+        return session
     }
 
     /// Prefer restoring a stored identity; otherwise create a fresh session.
@@ -178,6 +192,7 @@ public actor AgentConversationController {
         let message = AgentMessage(role: .user, content: content)
         state.beginUserTurn(content)
         publishState()
+        persistDurableTranscript()
 
         do {
             try await coordinator.send(message, in: session)
@@ -193,6 +208,7 @@ public actor AgentConversationController {
             )
             state.apply(.turnCompleted(stopReason: "send_error"))
             publishState()
+            persistDurableTranscript()
             throw error
         }
     }
@@ -226,6 +242,7 @@ public actor AgentConversationController {
         activeSession = nil
         activeBackendID = nil
         clearPersistedIdentity()
+        clearPersistedTranscript()
         state.apply(.sessionClosed)
         publishState()
     }
@@ -304,6 +321,7 @@ public actor AgentConversationController {
         }
 
         publishState()
+        persistDurableTranscript()
     }
 
     private func publishState() {
@@ -350,6 +368,57 @@ public actor AgentConversationController {
         } catch {
             surfaceConversationError(
                 code: "conversation.identity-clear-failed",
+                underlying: error
+            )
+        }
+    }
+
+    private func persistDurableTranscript() {
+        guard let conversationID, let transcriptStore else { return }
+        // Skip empty snapshots so a fresh start does not leave a useless row
+        // before the first user turn. Close still clears explicitly.
+        guard !state.messages.isEmpty || !state.toolResults.isEmpty || state.usage != nil else {
+            return
+        }
+        do {
+            try transcriptStore.save(
+                AgentConversationTranscript(conversationID: conversationID, state: state)
+            )
+        } catch {
+            surfaceConversationError(
+                code: "conversation.transcript-persist-failed",
+                underlying: error
+            )
+        }
+    }
+
+    private func hydratePersistedTranscript() {
+        guard let conversationID, let transcriptStore else { return }
+        do {
+            guard let transcript = try transcriptStore.load(conversationID: conversationID) else {
+                return
+            }
+            state.restoreDurableTranscript(
+                messages: transcript.messages,
+                toolResults: transcript.toolResults,
+                usage: transcript.usage
+            )
+            publishState()
+        } catch {
+            surfaceConversationError(
+                code: "conversation.transcript-restore-failed",
+                underlying: error
+            )
+        }
+    }
+
+    private func clearPersistedTranscript() {
+        guard let conversationID, let transcriptStore else { return }
+        do {
+            try transcriptStore.remove(conversationID: conversationID)
+        } catch {
+            surfaceConversationError(
+                code: "conversation.transcript-clear-failed",
                 underlying: error
             )
         }

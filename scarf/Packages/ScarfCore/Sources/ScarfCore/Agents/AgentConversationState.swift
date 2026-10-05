@@ -31,6 +31,20 @@ public struct AgentConversationState: Equatable, Sendable {
 
     public init() {}
 
+    /// Hydrate committed transcript fields after a session identity restore.
+    ///
+    /// Does not touch drafts, permissions, or lifecycle flags — those remain
+    /// owned by the live event reducer / controller.
+    public mutating func restoreDurableTranscript(
+        messages: [AgentMessage],
+        toolResults: [String: AgentToolResult] = [:],
+        usage: AgentUsage? = nil
+    ) {
+        self.messages = messages
+        self.toolResults = toolResults
+        self.usage = usage
+    }
+
     public mutating func beginUserTurn(_ content: String) {
         messages.append(AgentMessage(role: .user, content: content))
         isRunning = true

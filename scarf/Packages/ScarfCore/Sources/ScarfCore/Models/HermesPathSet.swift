@@ -115,6 +115,13 @@ public struct HermesPathSet: Sendable, Hashable {
     public nonisolated var agentConversationIdentities: String {
         scarfDir + "/agent_conversation_identities.json"
     }
+    /// Backend-neutral Scarf durable transcript snapshot map
+    /// (`conversationID` → messages / toolResults / usage). Used by
+    /// `AgentConversationTranscriptStore` for Phase 2 resume fidelity.
+    /// Scarf-owned; Hermes never touches this file.
+    public nonisolated var agentConversationTranscripts: String {
+        scarfDir + "/agent_conversation_transcripts.json"
+    }
     /// Cached list of available Nous Portal models. Populated by
     /// `NousModelCatalogService` from `GET https://inference-api.nousresearch.com/v1/models`
     /// using the bearer token in `auth.json`. Refreshed on a 24h TTL or
