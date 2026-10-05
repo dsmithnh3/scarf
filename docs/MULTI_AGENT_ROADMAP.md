@@ -165,8 +165,8 @@ Claude process cleanup is locked without a production change. Conversation close
 
 1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
 2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
-3. Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.
-4. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later.
+3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI).
+4. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next extension step: integrate Hermes skills/plugins read-only without regression (no CLUI transplant; no invented Claude skills).
 
 ## macOS-CLUI-CC adoption analysis
 

@@ -53,7 +53,7 @@ jobs:
       - name: Run multi-agent behavior tests
         run: >-
           swift test --filter
-          'AgentConversation|AgentCoordinator|ProjectAgentPreference'
+          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension'
 
   macos-build:
     name: macOS App Build

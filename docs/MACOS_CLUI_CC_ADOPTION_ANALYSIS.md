@@ -628,7 +628,7 @@ Each can be evaluated independently after multi-agent foundations are stable.
 - [x] Build Scarf-native slash hint UI onto `hints(...)` (`AgentSlashHintPresenter`, `AgentChatViewModel` draft wiring, `AgentSlashHintMenu`; ScarfDesign only; no CLUI transplant; CI [37358088673](https://github.com/dsmithnh3/scarf/actions/runs/37358088673)).
 - [x] Wire live Hermes ACP `available_commands_update` into the Scarf-native registry (`AgentSlashCommandACPDiscovery`, `mergingLiveHermesACPCommands`, event/state/ViewModel refresh).
 - [ ] Adapt CLUI slash routing concepts (Scarf-native only).
-- [ ] Define unified extension catalog model.
+- [x] Define unified extension catalog model (`AgentExtensionKind` / `AgentExtensionDescriptor` / `AgentExtensionCatalog`; Hermes plugin/skill/MCP fixture adapters; Claude skills + Scarf-local stubs empty; no UI).
 - [ ] Integrate Hermes skills/plugins without regression.
 - [ ] Add Claude Code skills/MCP discovery where supported.
 - [ ] Adapt CLUI MCP catalog concepts.
