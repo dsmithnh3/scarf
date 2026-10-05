@@ -6,7 +6,7 @@ import ScarfCore
 /// The first integration intentionally supports local Claude Code only. Remote
 /// execution is not advertised until it is implemented and regression-tested
 /// against Scarf's existing Hermes SSH behavior.
-actor ClaudeCodeBackend: AgentBackend {
+actor ClaudeCodeBackend: SessionScopedAgentBackend {
     typealias ExecutableResolver = @Sendable () -> String?
     typealias InstallationProbe = @Sendable (String) async -> AgentInstallationStatus
     typealias EnvironmentProvider = @Sendable () -> [String: String]
@@ -32,11 +32,13 @@ actor ClaudeCodeBackend: AgentBackend {
         .shellCommands,
     ]
     nonisolated let events: AsyncStream<AgentEvent>
+    nonisolated let sessionEvents: AsyncStream<AgentBackendEvent>
 
     private let executableResolver: ExecutableResolver
     private let installationProbe: InstallationProbe
     private let environmentProvider: EnvironmentProvider
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
+    private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var runtimes: [String: Runtime] = [:]
 
     init(
@@ -56,6 +58,10 @@ actor ClaudeCodeBackend: AgentBackend {
         var continuation: AsyncStream<AgentEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
         self.eventContinuation = continuation
+
+        var sessionContinuation: AsyncStream<AgentBackendEvent>.Continuation!
+        self.sessionEvents = AsyncStream { sessionContinuation = $0 }
+        self.sessionEventContinuation = sessionContinuation
     }
 
     nonisolated func installationStatus() async -> AgentInstallationStatus {
@@ -163,11 +169,11 @@ actor ClaudeCodeBackend: AgentBackend {
         do {
             _ = try await runtime.manager.sendInterrupt()
         } catch {
-            eventContinuation.yield(.error(AgentError(
+            yield(.error(AgentError(
                 code: "claude.interrupt-failed",
                 message: error.localizedDescription,
                 isRecoverable: true
-            )))
+            )), sessionID: session.id)
         }
     }
 
@@ -176,7 +182,7 @@ actor ClaudeCodeBackend: AgentBackend {
         runtime.incomingTask.cancel()
         runtime.stderrTask.cancel()
         await runtime.manager.close()
-        eventContinuation.yield(.sessionClosed)
+        yield(.sessionClosed, sessionID: session.id)
     }
 
     private func startRuntime(
@@ -234,54 +240,54 @@ actor ClaudeCodeBackend: AgentBackend {
                 do {
                     if let control = try ClaudeControlProtocol.decodeResponse(line) {
                         if !control.isSuccess {
-                            eventContinuation.yield(.error(AgentError(
+                            yield(.error(AgentError(
                                 code: "claude.control-response-error",
                                 message: control.errorMessage ?? "Claude Code rejected a control request",
                                 isRecoverable: true
-                            )))
+                            )), sessionID: sessionID)
                         }
                         continue
                     }
 
                     let mapped = try await decoder.decode(line: line)
                     for event in mapped {
-                        eventContinuation.yield(event)
+                        yield(event, sessionID: sessionID)
                     }
                 } catch let error as ClaudeStreamDecoderError {
-                    eventContinuation.yield(.error(AgentError(
+                    yield(.error(AgentError(
                         code: "claude.invalid-stream-json",
                         message: "Claude Code emitted a malformed stream-json frame: \(error)",
                         isRecoverable: true
-                    )))
+                    )), sessionID: sessionID)
                 } catch let error as ClaudeControlProtocolError {
-                    eventContinuation.yield(.error(AgentError(
+                    yield(.error(AgentError(
                         code: "claude.invalid-control-json",
                         message: "Claude Code emitted a malformed control frame: \(error)",
                         isRecoverable: true
-                    )))
+                    )), sessionID: sessionID)
                 } catch {
-                    eventContinuation.yield(.error(AgentError(
+                    yield(.error(AgentError(
                         code: "claude.stream-decode-failed",
                         message: error.localizedDescription,
                         isRecoverable: true
-                    )))
+                    )), sessionID: sessionID)
                 }
             }
 
             if !Task.isCancelled, runtimes[sessionID] != nil {
-                eventContinuation.yield(.error(AgentError(
+                yield(.error(AgentError(
                     code: "claude.process-ended",
                     message: "Claude Code process ended unexpectedly",
                     isRecoverable: true
-                )))
+                )), sessionID: sessionID)
             }
         } catch {
             if !Task.isCancelled, runtimes[sessionID] != nil {
-                eventContinuation.yield(.error(AgentError(
+                yield(.error(AgentError(
                     code: "claude.process-stream-failed",
                     message: error.localizedDescription,
                     isRecoverable: true
-                )))
+                )), sessionID: sessionID)
             }
         }
     }
@@ -299,13 +305,18 @@ actor ClaudeCodeBackend: AgentBackend {
             }
         } catch {
             if !Task.isCancelled, runtimes[sessionID] != nil {
-                eventContinuation.yield(.error(AgentError(
+                yield(.error(AgentError(
                     code: "claude.stderr-stream-failed",
                     message: error.localizedDescription,
                     isRecoverable: true
-                )))
+                )), sessionID: sessionID)
             }
         }
+    }
+
+    private func yield(_ event: AgentEvent, sessionID: String) {
+        eventContinuation.yield(event)
+        sessionEventContinuation.yield(AgentBackendEvent(sessionID: sessionID, event: event))
     }
 
     nonisolated private static func defaultInstallationProbe(
