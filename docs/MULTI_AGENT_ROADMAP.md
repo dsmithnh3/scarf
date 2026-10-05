@@ -60,6 +60,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - `568f1366` — rapid sequential replacements close each outgoing session and leave only the last one active.
 - `8daeeb59` — CI run [37313877576](https://github.com/dsmithnh3/scarf/actions/runs/37313877576) passed Multi-Agent Tests, ScarfCore Compile Gate, and macOS App Build.
 - `a1234f23` — already-green lock for Claude process cleanup. `conversationCloseTerminatesClaudeProcess` proves conversation close terminates the Claude process. `turnCancelInterruptsClaudeWithoutTerminatingProcess` proves turn cancel delivers a control interrupt and leaves that process running until a later close. `ClaudeCodeBackend.close` already cancelled the stream tasks and closed the process manager, and `cancel` already sent the interrupt, so no production code changed. Dropping `manager.close()` makes the close test fail with `processStillRunning`.
+- `9389a29a` — Claude Process Tests CI job. First run failed compiling scarfTests because `try #require(throwingCall)` does not compile under Xcode 26.6; follow-up fixes the Claude control protocol tests so the host-app suite can build.
 
 ## Current TDD milestone
 
@@ -199,8 +200,9 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Resume replacement cleanup, including a minted session id and a backend switch (`83cf7bfa`).
 - [x] Rapid sequential replacements (`568f1366`).
 - [x] Claude close/cancel process release (`a1234f23`). Behavior was already present. Close terminates the process (`conversationCloseTerminatesClaudeProcess`). Cancel interrupts the turn and leaves the process alive (`turnCancelInterruptsClaudeWithoutTerminatingProcess`).
-- [ ] Claude Code installation/version diagnostics.
-- [ ] Session resume/history fidelity beyond identity cleanup.
+- [x] Claude Process Tests CI gate (`9389a29a`). `xcodebuild test -only-testing:scarfTests/ClaudeCodeBackendTests` on macOS.
+- [ ] Claude Code installation/version diagnostics (probe/create/resume not-installed + home PATH coverage in progress).
+- [ ] Session resume identity: keep Scarf routing id when Claude system init reports a divergent `session_id` (in progress).
 - [ ] Capability contract audit. Claude permissions remain unimplemented and unadvertised.
 
 ### Phase 2 — adopt high-value CLUI patterns

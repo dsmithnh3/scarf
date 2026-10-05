@@ -78,6 +78,106 @@ struct ClaudeCodeBackendTests {
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
+
+        do {
+            try await backend.cancelPermission(request, in: session)
+            Issue.record("Expected unsupported permissions error on cancel")
+        } catch let error as AgentError {
+            #expect(error.code == "claude.permissions-not-implemented")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("unavailable installation probe is surfaced without claiming availability")
+    func unavailableInstallation() async {
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/tmp/claude" },
+            installationProbe: { _ in .unavailable(reason: "version probe failed") },
+            environmentProvider: { [:] }
+        )
+        #expect(await backend.installationStatus() == .unavailable(reason: "version probe failed"))
+    }
+
+    @Test("createSession fails when Claude executable is missing")
+    func createSessionRequiresExecutable() async {
+        let backend = ClaudeCodeBackend(
+            executableResolver: { nil },
+            installationProbe: { _ in .available(version: "should-not-run") },
+            environmentProvider: { [:] }
+        )
+        do {
+            _ = try await backend.createSession(configuration: AgentSessionConfiguration())
+            Issue.record("Expected claude.not-installed")
+        } catch let error as AgentError {
+            #expect(error.code == "claude.not-installed")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("resumeSession fails when Claude executable is missing")
+    func resumeSessionRequiresExecutable() async {
+        let backend = ClaudeCodeBackend(
+            executableResolver: { nil },
+            installationProbe: { _ in .available(version: "should-not-run") },
+            environmentProvider: { [:] }
+        )
+        let session = AgentSession(id: "existing", backendID: .claudeCode)
+        do {
+            _ = try await backend.resumeSession(session)
+            Issue.record("Expected claude.not-installed")
+        } catch let error as AgentError {
+            #expect(error.code == "claude.not-installed")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("resume keeps the requested Claude session identity when the runtime is already active")
+    func resumeKeepsRequestedIdentity() async throws {
+        try await ClaudeProcessLifecycleProbe.withSession { probe in
+            let ready = try await probe.nextText()
+            #expect(ready == "ready")
+            let before = try #require(await probe.controller.stateSnapshot().session)
+
+            let resumed = try await probe.controller.resumeSession(before)
+            #expect(resumed.id == before.id)
+            #expect(resumed.backendID == .claudeCode)
+            #expect((await probe.controller.stateSnapshot()).session?.id == before.id)
+            #expect(!(await probe.controller.stateSnapshot()).isClosed)
+
+            try await probe.controller.send("next")
+            let ack = try await probe.nextText()
+            #expect(ack == "ack")
+        }
+    }
+
+    @Test("system init that reports a different session id keeps Scarf routing identity")
+    func divergentSystemInitKeepsRoutingIdentity() async throws {
+        try await ClaudeProcessLifecycleProbe.withSession(
+            script: ClaudeProcessLifecycleProbe.divergentSessionScript
+        ) { probe in
+            let ready = try await probe.nextText()
+            #expect(ready == "ready")
+
+            let state = try await probe.waitForState {
+                $0.assistantDraft.contains("ready")
+                    || $0.messages.contains { $0.role == .assistant && $0.content.contains("ready") }
+            }
+            let activeID = try #require(state.session?.id)
+            #expect(activeID != "claude-reported-id")
+            #expect(state.session?.metadata["claudeReportedSessionID"] == "claude-reported-id")
+
+            try await probe.controller.send("next")
+            let ack = try await probe.nextText()
+            #expect(ack == "ack")
+            let afterAck = try await probe.waitForState {
+                $0.assistantDraft.contains("ack")
+                    || $0.messages.contains { $0.role == .assistant && $0.content.contains("ack") }
+            }
+            #expect(afterAck.session?.id == activeID)
+        }
     }
 
     @Test("closing the conversation terminates the Claude Code process")
@@ -147,6 +247,7 @@ private final class ClaudeProcessLifecycleProbe {
     private static let failureBoundNanoseconds: UInt64 = 5_000_000_000
 
     static func withSession(
+        script: String = ClaudeProcessLifecycleProbe.script,
         _ body: (ClaudeProcessLifecycleProbe) async throws -> Void
     ) async throws {
         let directory = FileManager.default.temporaryDirectory
@@ -155,7 +256,7 @@ private final class ClaudeProcessLifecycleProbe {
         let fifoPath = directory.appendingPathComponent("lifetime").path
         let logPath = directory.appendingPathComponent("trace.log").path
         let executable = directory.appendingPathComponent("claude")
-        try Self.script.write(to: executable, atomically: true, encoding: .utf8)
+        try script.write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         guard mkfifo(fifoPath, mode_t(0o600)) == 0 else {
             throw ClaudeProcessLifecycleError.posix("mkfifo", errno)
@@ -227,6 +328,20 @@ private final class ClaudeProcessLifecycleProbe {
     func expectProcessExited() async throws {
         try await first(failure: .processStillRunning) {
             try await self.exitWatch.value
+        }
+    }
+
+    func waitForState(
+        _ predicate: @escaping @Sendable (AgentConversationState) -> Bool
+    ) async throws -> AgentConversationState {
+        if predicate(await controller.stateSnapshot()) {
+            return await controller.stateSnapshot()
+        }
+        return try await first(failure: .timedOut) {
+            for await state in self.controller.stateUpdates {
+                if predicate(state) { return state }
+            }
+            throw ClaudeProcessLifecycleError.streamEnded
         }
     }
 
@@ -348,6 +463,51 @@ private final class ClaudeProcessLifecycleProbe {
         if '"subtype":"interrupt"' in line:
             emit("interrupted")
         elif '"type":"user"' in line:
+            emit("ack")
+    os.close(fifo)
+    log.write("exit\\n")
+    """
+
+    /// Emits a system init whose session_id intentionally differs from Scarf's
+    /// `--session-id`, then streams text under that divergent identity.
+    static let divergentSessionScript = """
+    #!/usr/bin/python3
+    import json, os, sys
+
+    fifo = os.open(os.environ["SCARF_CLAUDE_LIFECYCLE_FIFO"], os.O_WRONLY)
+    log = open(os.environ["SCARF_CLAUDE_LIFECYCLE_LOG"], "w", buffering=1)
+    log.write("pid %s\\n" % os.getpid())
+
+    def emit_obj(obj):
+        sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\\n")
+        sys.stdout.flush()
+
+    def emit(text):
+        emit_obj({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "delta": {"type": "text_delta", "text": text},
+            },
+        })
+        log.write("emit %s\\n" % text)
+
+    emit_obj({
+        "type": "system",
+        "subtype": "init",
+        "session_id": "claude-reported-id",
+        "cwd": os.getcwd(),
+        "model": "opus",
+    })
+    log.write("init divergent\\n")
+    emit("ready")
+    while True:
+        line = sys.stdin.readline()
+        if line == "":
+            log.write("stdin eof\\n")
+            break
+        log.write("in %s" % line)
+        if '"type":"user"' in line:
             emit("ack")
     os.close(fifo)
     log.write("exit\\n")

@@ -251,7 +251,10 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
 
                     let mapped = try await decoder.decode(line: line)
                     for event in mapped {
-                        yield(event, sessionID: sessionID)
+                        yield(
+                            Self.alignedEvent(event, runtimeSessionID: sessionID),
+                            sessionID: sessionID
+                        )
                     }
                 } catch let error as ClaudeStreamDecoderError {
                     yield(.error(AgentError(
@@ -317,6 +320,26 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     private func yield(_ event: AgentEvent, sessionID: String) {
         eventContinuation.yield(event)
         sessionEventContinuation.yield(AgentBackendEvent(sessionID: sessionID, event: event))
+    }
+
+    /// Keep Scarf's runtime session id as the routing key even when Claude's
+    /// system init reports a different `session_id`. Divergent ids are retained
+    /// in metadata for diagnostics without orphaning later scoped events.
+    nonisolated private static func alignedEvent(
+        _ event: AgentEvent,
+        runtimeSessionID: String
+    ) -> AgentEvent {
+        guard case .sessionStarted(let reported) = event else { return event }
+        guard reported.id != runtimeSessionID else { return event }
+
+        var metadata = reported.metadata
+        metadata["claudeReportedSessionID"] = reported.id
+        return .sessionStarted(AgentSession(
+            id: runtimeSessionID,
+            backendID: reported.backendID,
+            workingDirectory: reported.workingDirectory,
+            metadata: metadata
+        ))
     }
 
     nonisolated private static func defaultInstallationProbe(

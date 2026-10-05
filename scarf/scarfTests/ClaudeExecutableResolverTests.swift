@@ -70,6 +70,34 @@ struct ClaudeExecutableResolverTests {
         #expect(resolved == nil)
     }
 
+    @Test("home-relative standard candidate is discovered when PATH is empty")
+    func homeCandidate() throws {
+        let root = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let binary = root.appendingPathComponent(".local/bin/claude")
+        try makeExecutable(at: binary)
+
+        let resolved = ClaudeExecutableResolver.resolve(
+            environment: ["PATH": ""],
+            homeDirectory: root,
+            standardCandidates: [".local/bin/claude"]
+        )
+        #expect(resolved == binary.path)
+    }
+
+    @Test("missing executable reports nil rather than a guessed path")
+    func missingReportsNil() throws {
+        let root = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resolved = ClaudeExecutableResolver.resolve(
+            environment: ["PATH": root.path],
+            homeDirectory: root,
+            standardCandidates: [".local/bin/claude", "/opt/missing/claude"]
+        )
+        #expect(resolved == nil)
+    }
+
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
