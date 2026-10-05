@@ -65,6 +65,19 @@ struct AgentConversationSessionIsolationTests {
             configuration: AgentSessionConfiguration(metadata: ["testSessionID": "session-b"])
         )
 
+        let firstCompleted = Task<AgentConversationState?, Never> {
+            for await state in first.stateUpdates {
+                if state.stopReason == "a-done" { return state }
+            }
+            return nil
+        }
+        let secondCompleted = Task<AgentConversationState?, Never> {
+            for await state in second.stateUpdates {
+                if state.stopReason == "b-done" { return state }
+            }
+            return nil
+        }
+
         await backend.emit(.textStarted, sessionID: "session-a")
         await backend.emit(.textDelta("alpha"), sessionID: "session-a")
         await backend.emit(.textCompleted, sessionID: "session-a")
@@ -75,12 +88,8 @@ struct AgentConversationSessionIsolationTests {
         await backend.emit(.textCompleted, sessionID: "session-b")
         await backend.emit(.turnCompleted(stopReason: "b-done"), sessionID: "session-b")
 
-        // Allow both independent coordinator subscriptions to consume the
-        // already-enqueued events before reading their actor-isolated states.
-        try await Task.sleep(for: .milliseconds(100))
-
-        let firstState = await first.stateSnapshot()
-        let secondState = await second.stateSnapshot()
+        let firstState = try #require(await firstCompleted.value)
+        let secondState = try #require(await secondCompleted.value)
 
         #expect(firstState.messages.map(\.content) == ["alpha"])
         #expect(firstState.stopReason == "a-done")
