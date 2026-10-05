@@ -6,7 +6,7 @@ import ScarfCore
 /// This type delegates to the production `ACPClient.forMacApp` path instead of
 /// replacing it. Existing Hermes-only services (memory, cron, gateway, proxy,
 /// configuration, etc.) remain owned by their current implementations.
-actor HermesBackend: AgentBackend {
+actor HermesBackend: SessionScopedAgentBackend {
     typealias InstallationProbe = @Sendable () async -> AgentInstallationStatus
 
     nonisolated let id: AgentID = .hermes
@@ -29,10 +29,12 @@ actor HermesBackend: AgentBackend {
         .remoteExecution,
     ]
     nonisolated let events: AsyncStream<AgentEvent>
+    nonisolated let sessionEvents: AsyncStream<AgentBackendEvent>
 
     private let context: ServerContext
     private let installationProbe: InstallationProbe
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
+    private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var clients: [String: ACPClient] = [:]
     private var forwardingTasks: [String: Task<Void, Never>] = [:]
 
@@ -45,6 +47,10 @@ actor HermesBackend: AgentBackend {
         var continuation: AsyncStream<AgentEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
         self.eventContinuation = continuation
+
+        var sessionContinuation: AsyncStream<AgentBackendEvent>.Continuation!
+        self.sessionEvents = AsyncStream { sessionContinuation = $0 }
+        self.sessionEventContinuation = sessionContinuation
 
         if let installationProbe {
             self.installationProbe = installationProbe
@@ -101,7 +107,7 @@ actor HermesBackend: AgentBackend {
             workingDirectory: configuration.workingDirectory,
             metadata: configuration.metadata
         )
-        eventContinuation.yield(.sessionStarted(session))
+        yield(.sessionStarted(session), sessionID: sessionID)
         return session
     }
 
@@ -124,7 +130,7 @@ actor HermesBackend: AgentBackend {
             workingDirectory: session.workingDirectory,
             metadata: session.metadata
         )
-        eventContinuation.yield(.sessionStarted(resumed))
+        yield(.sessionStarted(resumed), sessionID: loadedID)
         return resumed
     }
 
@@ -141,7 +147,7 @@ actor HermesBackend: AgentBackend {
 
         let response = try await client.sendPrompt(sessionId: session.id, text: message.content)
         for event in HermesEventMapper.map(.promptComplete(sessionId: session.id, response: response)) {
-            eventContinuation.yield(event)
+            yield(event, sessionID: session.id)
         }
     }
 
@@ -177,11 +183,11 @@ actor HermesBackend: AgentBackend {
         do {
             try await client.cancel(sessionId: session.id)
         } catch {
-            eventContinuation.yield(.error(AgentError(
+            yield(.error(AgentError(
                 code: "hermes.cancel-failed",
                 message: error.localizedDescription,
                 isRecoverable: true
-            )))
+            )), sessionID: session.id)
         }
     }
 
@@ -190,7 +196,7 @@ actor HermesBackend: AgentBackend {
         if let client = clients.removeValue(forKey: session.id) {
             await client.stop()
         }
-        eventContinuation.yield(.sessionClosed)
+        yield(.sessionClosed, sessionID: session.id)
     }
 
     private func startForwarding(client: ACPClient, sessionID: String) {
@@ -199,13 +205,14 @@ actor HermesBackend: AgentBackend {
             for await event in await client.events {
                 guard !Task.isCancelled else { break }
                 for mapped in HermesEventMapper.map(event) {
-                    await self?.yield(mapped)
+                    await self?.yield(mapped, sessionID: sessionID)
                 }
             }
         }
     }
 
-    private func yield(_ event: AgentEvent) {
+    private func yield(_ event: AgentEvent, sessionID: String) {
         eventContinuation.yield(event)
+        sessionEventContinuation.yield(AgentBackendEvent(sessionID: sessionID, event: event))
     }
 }
