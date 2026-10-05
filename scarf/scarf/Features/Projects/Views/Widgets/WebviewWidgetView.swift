@@ -51,8 +51,17 @@ struct WebviewWidgetView: View {
         VStack(spacing: 0) {
             if let url = webURL {
                 blockedBanner
-                WebViewRepresentable(url: url, blocked: $blockedNavigation)
-                    .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.lg))
+                // The full-canvas Site tab can use SwiftUI's WebPage on OS 26.
+                // The inline card stays on WKWebView, and so does this tab
+                // below OS 26. The page is https-only, pinned to the declared
+                // host, and uses a non-persistent store. No script handler.
+                if #available(macOS 26, *) {
+                    SiteWebPage(url: url, blocked: $blockedNavigation)
+                        .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.lg))
+                } else {
+                    WebViewRepresentable(url: url, blocked: $blockedNavigation)
+                        .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.lg))
+                }
             } else {
                 ContentUnavailableView {
                     Label("Invalid URL", systemImage: "globe")
@@ -121,6 +130,109 @@ struct WebviewWidgetView: View {
             }
             .padding(.vertical, 4)
         }
+    }
+}
+
+// MARK: - OS 26 Site tab
+
+/// Full-canvas Site tab on OS 26. Same rules as `WebViewRepresentable`:
+/// https only, main frame pinned to the declared host, non-persistent
+/// data store, no script message handler. A refused navigation is visible.
+///
+/// The page and its decider are created once. SwiftUI rebuilds this view
+/// often; a sink allocated in `init` would not be the one the page holds.
+@available(macOS 26, *)
+private struct SiteWebPage: View {
+    let url: URL
+    @Binding var blocked: String?
+    @State private var session: SiteWebSession?
+
+    var body: some View {
+        Group {
+            if let session {
+                WebView(session.page)
+            } else {
+                Color.clear
+            }
+        }
+        .task(id: url) {
+            let session = session ?? SiteWebSession(url: url)
+            if self.session == nil { self.session = session }
+            session.pin.host = url.host?.lowercased() ?? ""
+            session.pin.report = { blocked = $0 }
+            // `load` returns a sequence; the navigation starts when it is
+            // iterated. Cancelling this task (url change, disappear) stops it.
+            do {
+                for try await _ in session.page.load(URLRequest(url: url)) {}
+            } catch {
+                // The decider reports a refused navigation. A failed load
+                // leaves that message in place.
+            }
+        }
+    }
+}
+
+@available(macOS 26, *)
+private final class SiteWebSession {
+    let page: WebPage
+    let pin: SiteNavigationPin
+
+    init(url: URL) {
+        let pin = SiteNavigationPin(host: url.host?.lowercased() ?? "")
+        self.pin = pin
+        var configuration = WebPage.Configuration()
+        configuration.websiteDataStore = .nonPersistent()
+        self.page = WebPage(
+            configuration: configuration,
+            navigationDecider: SiteNavigationDecider(pin: pin)
+        )
+    }
+}
+
+@available(macOS 26, *)
+private final class SiteNavigationPin {
+    var host: String
+    var report: ((String) -> Void)?
+
+    init(host: String) {
+        self.host = host
+    }
+}
+
+@available(macOS 26, *)
+private struct SiteNavigationDecider: WebPage.NavigationDeciding {
+    let pin: SiteNavigationPin
+
+    mutating func decidePolicy(
+        for action: WebPage.NavigationAction,
+        preferences: inout WebPage.NavigationPreferences
+    ) async -> WKNavigationActionPolicy {
+        _ = preferences
+        let requestURL = action.request.url
+        let scheme = requestURL?.scheme?.lowercased()
+        let host = requestURL?.host?.lowercased()
+        guard scheme == "https" else {
+            pin.report?(requestURL?.scheme.map { "\($0):" } ?? "an unknown scheme")
+            return .cancel
+        }
+        // `target` is nil for a new-window navigation. Treat that as the
+        // main frame so it stays on the declared host. Subframes may be
+        // https anywhere (CDNs, embeds).
+        let mainFrame = action.target?.isMainFrame ?? true
+        if !mainFrame {
+            return .allow
+        }
+        let pinnedHost = pin.host
+        guard !pinnedHost.isEmpty, let host,
+              host == pinnedHost || host.hasSuffix("." + pinnedHost) else {
+            pin.report?(host ?? "an unknown host")
+            return .cancel
+        }
+        return .allow
+    }
+
+    mutating func decidePolicy(for response: WebPage.NavigationResponse) async -> WKNavigationResponsePolicy {
+        .allow
     }
 }
 

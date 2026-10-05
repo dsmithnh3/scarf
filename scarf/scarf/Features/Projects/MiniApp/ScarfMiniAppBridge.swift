@@ -503,6 +503,29 @@ final class ScarfMiniAppBridge: NSObject, WKScriptMessageHandlerWithReply {
                     await MainActor.run { replyHandler(nil, "internal_error: \(error.localizedDescription)") }
                 }
             }
+        case "cron.status":
+            // A second gate. The launcher already refuses a remote mini-app;
+            // this handler refuses again so a local grant cannot be replayed
+            // against a remote profile. Not `not_implemented`: that string
+            // is what an old `query:cron.jobs` grant still receives.
+            guard !serverContext.isRemote else {
+                replyHandler(nil, "unavailable: query:cron.status is local only")
+                return
+            }
+            let ctx = serverContext
+            let projectId = projectId
+            let projectPath = projectPath
+            Task {
+                let json = await Task.detached {
+                    guard let uuid = UUID(uuidString: projectId) else { return "[]" }
+                    let jobs = HermesFileService(context: ctx).loadCronJobs()
+                    let templateId = ProjectStore(context: ctx).templateInfo(projectPath: projectPath)?.id
+                    return CronStatusProjection.json(
+                        from: jobs, projectID: uuid, templateId: templateId
+                    )
+                }.value
+                await MainActor.run { replyHandler(json, nil) }
+            }
         default:
             replyHandler(nil, "not_implemented: query:\(kind) is not available in this build")
         }

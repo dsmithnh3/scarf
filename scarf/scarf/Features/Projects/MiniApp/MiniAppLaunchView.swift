@@ -152,13 +152,14 @@ struct MiniAppLaunchHost: View {
                         guard !isSaving else { return }
                         isSaving = true
                         saveError = nil
+                        let live = MiniAppPermission.wired(approved)
                         Task {
-                            let failure = await save(approved)
+                            let failure = await save(live)
                             isSaving = false
                             if let failure {
                                 saveError = failure
                             } else {
-                                granted = approved
+                                granted = live
                                 phase = .run
                             }
                         }
@@ -299,13 +300,20 @@ struct MiniAppPermissionPreview: View {
 
     @State private var checked: Set<MiniAppPermission> = []
 
-    /// Permissions that can actually be toggled (unknowns are shown but
-    /// never grantable).
+    /// Permissions that can actually be toggled. Unknowns and unwired
+    /// surfaces (`file:write`, `kanban:write`, `net`) are shown but never
+    /// grantable.
     private var grantable: [MiniAppPermission] {
-        Self.deduped(manifest.permissions.filter { if case .unknown = $0 { return false }; return true })
+        Self.deduped(manifest.permissions.filter { perm in
+            if case .unknown = perm { return false }
+            return perm.isWired
+        })
     }
-    private var unknowns: [MiniAppPermission] {
-        Self.deduped(manifest.permissions.filter { if case .unknown = $0 { return true }; return false })
+    private var denied: [MiniAppPermission] {
+        Self.deduped(manifest.permissions.filter { perm in
+            if case .unknown = perm { return true }
+            return !perm.isWired
+        })
     }
 
     /// First occurrence wins, order preserved.
@@ -354,7 +362,7 @@ struct MiniAppPermissionPreview: View {
                             permissionRow(perm)
                         }
                     }
-                    ForEach(unknowns, id: \.self) { perm in
+                    ForEach(denied, id: \.self) { perm in
                         HStack(spacing: 8) {
                             Image(systemName: "questionmark.circle")
                                 .foregroundStyle(ScarfColor.warning)

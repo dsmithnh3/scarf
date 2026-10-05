@@ -469,6 +469,7 @@ private struct ProfileScopedRoot: View {
 /// reinitializes everything when the user switches servers.
 private struct ContextBoundRoot: View {
     let context: ServerContext
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var coordinator: AppCoordinator
     @State private var fileWatcher: HermesFileWatcher
@@ -514,6 +515,17 @@ private struct ContextBoundRoot: View {
             // until first resize.
             .windowFrameAutosave("Scarf.Window.\(context.id)")
             .onAppear { fileWatcher.startWatching() }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                if phase == .active {
+                    AppCoordinator.frontmost = coordinator
+                    if AppCoordinator.pendingOpenBoard {
+                        AppCoordinator.pendingOpenBoard = false
+                        coordinator.requestOpenBoard()
+                    }
+                } else if AppCoordinator.frontmost === coordinator {
+                    AppCoordinator.frontmost = nil
+                }
+            }
             // The `/scarf-*` commands are installed on this Mac at launch;
             // a remote host gets them the first time a window connects to
             // it (S03-F5). Off-main and once per host per app session.
@@ -810,7 +822,36 @@ final class ServerLiveStatus: Identifiable {
         if gatewayRunning != probe.gatewayRunning {
             gatewayRunning = probe.gatewayRunning
         }
+        refreshWeekCostIfDue()
         return probe.ok
+    }
+
+    /// Last-7-days cost from the same stats query the home Dashboard uses.
+    /// `nil` until the first fetch finishes. Refreshed from the live-status
+    /// poll, but on its own task and no more than once a minute, so a
+    /// remote sqlite read is not an extra SSH query every 10s and a slow
+    /// read cannot fail the pgrep probe.
+    private(set) var weekCostUSD: Double?
+    private var lastWeekCostFetch: Date?
+    private var weekCostFetchInFlight = false
+
+    private func refreshWeekCostIfDue() {
+        let now = Date()
+        if weekCostFetchInFlight { return }
+        if let lastWeekCostFetch, now.timeIntervalSince(lastWeekCostFetch) < 60 { return }
+        weekCostFetchInFlight = true
+        lastWeekCostFetch = now
+        let context = context
+        let since = DashboardViewModel.statsWindowStart(now: now)
+        Task { [weak self] in
+            let cost = await Task.detached {
+                let stats = await HermesDataService(context: context).fetchStats(since: since)
+                return stats.totalActualCostUSD > 0 ? stats.totalActualCostUSD : stats.totalCostUSD
+            }.value
+            guard let self else { return }
+            self.weekCostFetchInFlight = false
+            if self.weekCostUSD != cost { self.weekCostUSD = cost }
+        }
     }
 }
 
@@ -1049,6 +1090,12 @@ struct MenuBarMenu: View {
                 status.gatewayRunning ? "Messaging Gateway Running" : "Messaging Gateway Stopped",
                 systemImage: status.gatewayRunning ? "circle.fill" : "circle"
             )
+            if let cost = status.weekCostUSD {
+                Label(
+                    "Last 7 days \(cost.formatted(.currency(code: "USD").precision(.fractionLength(2))))",
+                    systemImage: "dollarsign.circle"
+                )
+            }
             Button("Start Hermes") { status.startHermes() }
                 .disabled(status.hermesRunning)
             Button("Stop Hermes") { status.stopHermes() }

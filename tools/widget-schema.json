@@ -39,7 +39,7 @@
       "optional": []
     },
     "webview": {
-      "description": "Embedded URL in an iframe / WKWebView. Including a webview also exposes a Site tab in the project view.",
+      "description": "Embedded https URL in a WKWebView. http, file, and other schemes are refused. Including a webview also exposes a Site tab in the project view.",
       "since": "v2.2",
       "required": ["title", "url"],
       "optional": ["height"]
@@ -63,7 +63,7 @@
       "optional": ["lines"]
     },
     "image": {
-      "description": "Local image file (path relative to project root) or remote URL.",
+      "description": "Local image file (path relative to project root) or remote https URL. http and file URLs are refused.",
       "since": "v2.7",
       "required": ["title"],
       "optional": ["path", "url", "height"]
