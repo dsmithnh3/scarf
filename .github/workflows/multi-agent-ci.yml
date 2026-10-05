@@ -114,6 +114,7 @@ jobs:
   # scarfTests (host-app) cases such as Claude process close/cancel are outside
   # the ScarfCore swift-test filter. Suite-level -only-testing selects both
   # XCTest and Swift Testing identifiers without the function-paren gotcha.
+  # Provider diagnostics (`AgentProviderDiagnosticsTests`) share this gate.
   claude-process-tests:
     name: Claude Process Tests
     runs-on: macos-26
