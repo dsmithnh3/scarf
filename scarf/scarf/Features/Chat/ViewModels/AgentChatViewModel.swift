@@ -64,8 +64,16 @@ final class AgentChatViewModel {
         try await controller.cancel()
     }
 
-    func close() async throws {
-        try await controller.close()
+    func close() async {
+        guard isStarted else { return }
+        do {
+            try await controller.close()
+        } catch {
+            // Teardown is best effort. The backend process/channel owns its own
+            // bounded shutdown path, and leaving Chat must not trap the user on
+            // the surface because a close notification failed.
+        }
+        isStarted = false
     }
 
     func respond(to request: AgentPermissionRequest, optionID: String) async throws {
