@@ -79,4 +79,18 @@ actor AgentRuntime {
         // return nil rather than silently falling back to a different runtime.
         return await coordinator.backend(for: project.preferredAgentID)
     }
+
+    /// Build a backend-neutral conversation controller only when the project's
+    /// preferred runtime is registered in this window/profile context.
+    ///
+    /// This is intentionally a factory rather than a global controller: each
+    /// chat owns its own session lifecycle/state while sharing the context-bound
+    /// coordinator and registered backend processes.
+    func conversationController(for project: ScarfProject) async -> AgentConversationController? {
+        await configureIfNeeded()
+        guard await coordinator.backend(for: project.preferredAgentID) != nil else {
+            return nil
+        }
+        return AgentConversationController(coordinator: coordinator)
+    }
 }
