@@ -10,19 +10,34 @@ public enum AgentConversationControllerError: Error, Equatable, Sendable {
 /// creates/resumes a selected backend session, sends user turns, routes control
 /// actions, and reduces backend events into `AgentConversationState`.
 public actor AgentConversationController {
+    /// State snapshots emitted after every controller-owned mutation.
+    ///
+    /// This is the observation seam for app-facing view models. Consumers react
+    /// to the state they actually need instead of trying to infer when multiple
+    /// asynchronous backend/coordinator queues have drained.
+    public nonisolated let stateUpdates: AsyncStream<AgentConversationState>
+
     private let coordinator: AgentCoordinator
+    private let stateContinuation: AsyncStream<AgentConversationState>.Continuation
     private var state = AgentConversationState()
     private var activeSession: AgentSession?
     private var activeBackendID: AgentID?
     private var eventTask: Task<Void, Never>?
-    private var lastObservedSequence: UInt64 = 0
 
     public init(coordinator: AgentCoordinator) {
         self.coordinator = coordinator
+
+        var continuation: AsyncStream<AgentConversationState>.Continuation!
+        self.stateUpdates = AsyncStream(bufferingPolicy: .bufferingNewest(32)) {
+            continuation = $0
+        }
+        self.stateContinuation = continuation
+        continuation.yield(state)
     }
 
     deinit {
         eventTask?.cancel()
+        stateContinuation.finish()
     }
 
     @discardableResult
@@ -38,6 +53,7 @@ public actor AgentConversationController {
         activeBackendID = backendID
         activeSession = session
         state.apply(.sessionStarted(session))
+        publishState()
         return session
     }
 
@@ -48,6 +64,7 @@ public actor AgentConversationController {
         activeBackendID = resumed.backendID
         activeSession = resumed
         state.apply(.sessionStarted(resumed))
+        publishState()
         return resumed
     }
 
@@ -58,6 +75,8 @@ public actor AgentConversationController {
 
         let message = AgentMessage(role: .user, content: content)
         state.beginUserTurn(content)
+        publishState()
+
         do {
             try await coordinator.send(message, in: session)
         } catch {
@@ -71,6 +90,7 @@ public actor AgentConversationController {
                 )
             )
             state.apply(.turnCompleted(stopReason: "send_error"))
+            publishState()
             throw error
         }
     }
@@ -102,22 +122,11 @@ public actor AgentConversationController {
         }
         try await coordinator.close(session: session)
         state.apply(.sessionClosed)
+        publishState()
     }
 
     public func stateSnapshot() -> AgentConversationState {
         state
-    }
-
-    /// Wait until this controller's event loop has observed every routed event
-    /// already forwarded by the coordinator when this method begins.
-    ///
-    /// This is primarily a deterministic synchronization seam for tests, but is
-    /// safe for callers that need an explicit flush point before reading state.
-    public func waitForEventsToDrain() async {
-        let target = await coordinator.latestRoutedEventSequence()
-        while lastObservedSequence < target {
-            await Task.yield()
-        }
     }
 
     private func ensureEventLoop() {
@@ -132,17 +141,17 @@ public actor AgentConversationController {
     }
 
     private func consume(_ routed: AgentRoutedEvent) {
-        lastObservedSequence = max(lastObservedSequence, routed.sequence)
         guard routed.backendID == activeBackendID else { return }
         state.apply(routed.event)
 
-        switch routed.event {
-        case .sessionStarted(let session):
+        if case .sessionStarted(let session) = routed.event {
             activeSession = session
-        case .sessionClosed:
-            break
-        default:
-            break
         }
+
+        publishState()
+    }
+
+    private func publishState() {
+        stateContinuation.yield(state)
     }
 }
