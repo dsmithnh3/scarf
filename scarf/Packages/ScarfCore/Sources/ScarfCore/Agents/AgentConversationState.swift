@@ -34,15 +34,40 @@ public struct AgentConversationState: Equatable, Sendable {
     /// Hydrate committed transcript fields after a session identity restore.
     ///
     /// Does not touch drafts, permissions, or lifecycle flags — those remain
-    /// owned by the live event reducer / controller.
+    /// owned by the live event reducer / controller. When both calls/commands
+    /// and their results are present, status is aligned by id the same way
+    /// the live reducer does on completion events.
     public mutating func restoreDurableTranscript(
         messages: [AgentMessage],
         toolResults: [String: AgentToolResult] = [:],
-        usage: AgentUsage? = nil
+        usage: AgentUsage? = nil,
+        toolCalls: [AgentToolCall] = [],
+        commands: [AgentCommand] = [],
+        commandOutput: [String: String] = [:],
+        commandResults: [String: AgentCommandResult] = [:],
+        fileChanges: [AgentFileChange] = [],
+        reasoningBlocks: [String] = []
     ) {
         self.messages = messages
         self.toolResults = toolResults
         self.usage = usage
+        self.toolCalls = toolCalls
+        self.commands = commands
+        self.commandOutput = commandOutput
+        self.commandResults = commandResults
+        self.fileChanges = fileChanges
+        self.reasoningBlocks = reasoningBlocks
+
+        for (toolCallID, result) in toolResults {
+            if let index = self.toolCalls.firstIndex(where: { $0.id == toolCallID }) {
+                self.toolCalls[index].status = result.status
+            }
+        }
+        for (commandID, result) in commandResults {
+            if let index = self.commands.firstIndex(where: { $0.id == commandID }) {
+                self.commands[index].status = result.exitCode == 0 ? .completed : .failed
+            }
+        }
     }
 
     public mutating func beginUserTurn(_ content: String) {

@@ -38,6 +38,107 @@ struct AgentConversationTranscriptStoreTests {
         #expect(loaded.usage == usage)
     }
 
+    @Test("durable activity fields survive a store reload boundary")
+    func activityFieldsPersistAcrossReload() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-agent-activity-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("agent_conversation_transcripts.json")
+
+        let toolCall = AgentToolCall(
+            id: "tool-1",
+            title: "Read file",
+            kind: "read",
+            status: .completed,
+            input: "README.md"
+        )
+        let toolResult = AgentToolResult(
+            toolCallID: "tool-1",
+            status: .completed,
+            output: "contents"
+        )
+        let command = AgentCommand(id: "cmd-1", command: "git status", status: .completed)
+        let commandResult = AgentCommandResult(commandID: "cmd-1", exitCode: 0, output: "clean")
+        let file = AgentFileChange(path: "/tmp/project/file.swift", kind: .modified, diff: "+line")
+        let usage = AgentUsage(inputTokens: 3, outputTokens: 5, reasoningTokens: 1, cachedReadTokens: 0)
+
+        let writer = AgentConversationTranscriptStore(fileURL: fileURL)
+        try writer.save(
+            AgentConversationTranscript(
+                conversationID: "conv-1",
+                messages: [AgentMessage(role: .user, content: "Do work")],
+                toolResults: ["tool-1": toolResult],
+                usage: usage,
+                toolCalls: [toolCall],
+                commands: [command],
+                commandOutput: ["cmd-1": "clean\n"],
+                commandResults: ["cmd-1": commandResult],
+                fileChanges: [file],
+                reasoningBlocks: ["Inspecting context"]
+            )
+        )
+
+        let reader = AgentConversationTranscriptStore(fileURL: fileURL)
+        let loaded = try #require(try reader.load(conversationID: "conv-1"))
+        #expect(loaded.toolCalls == [toolCall])
+        #expect(loaded.toolResults["tool-1"] == toolResult)
+        #expect(loaded.commands == [command])
+        #expect(loaded.commandOutput["cmd-1"] == "clean\n")
+        #expect(loaded.commandResults["cmd-1"] == commandResult)
+        #expect(loaded.fileChanges == [file])
+        #expect(loaded.reasoningBlocks == ["Inspecting context"])
+        #expect(loaded.usage == usage)
+    }
+
+    @Test("legacy transcripts decode with empty activity defaults")
+    func legacyTranscriptDecodesWithoutActivityKeys() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-agent-legacy-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("agent_conversation_transcripts.json")
+
+        // First-slice JSON shape: messages / toolResults / usage only.
+        let legacy = """
+        {
+          "transcripts" : {
+            "conv-1" : {
+              "conversationID" : "conv-1",
+              "messages" : [
+                {
+                  "content" : "Hello",
+                  "id" : "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+                  "role" : "user"
+                }
+              ],
+              "toolResults" : {
+
+              },
+              "usage" : {
+                "cachedReadTokens" : 0,
+                "inputTokens" : 1,
+                "outputTokens" : 2,
+                "reasoningTokens" : 0
+              }
+            }
+          }
+        }
+        """
+        try Data(legacy.utf8).write(to: fileURL)
+
+        let reader = AgentConversationTranscriptStore(fileURL: fileURL)
+        let loaded = try #require(try reader.load(conversationID: "conv-1"))
+        #expect(loaded.messages.map(\.content) == ["Hello"])
+        #expect(loaded.toolCalls.isEmpty)
+        #expect(loaded.commands.isEmpty)
+        #expect(loaded.commandOutput.isEmpty)
+        #expect(loaded.commandResults.isEmpty)
+        #expect(loaded.fileChanges.isEmpty)
+        #expect(loaded.reasoningBlocks.isEmpty)
+        #expect(loaded.usage?.inputTokens == 1)
+    }
+
     @Test("remove clears transcript so a reload finds nothing")
     func removeClearsAcrossReload() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -171,6 +272,115 @@ struct AgentConversationControllerTranscriptFidelityTests {
         #expect(after.messages.map(\.role) == [.user, .assistant])
         #expect(after.usage?.inputTokens == 11)
         #expect(after.usage?.outputTokens == 7)
+    }
+
+    @Test("restorePersistedSession rehydrates activity fields across reload")
+    func restoreRehydratesActivityFields() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-ctrl-activity-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let identityURL = directory.appendingPathComponent("agent_conversation_identities.json")
+        let transcriptURL = directory.appendingPathComponent("agent_conversation_transcripts.json")
+        let identityStore = AgentConversationIdentityStore(fileURL: identityURL)
+        let transcriptStore = AgentConversationTranscriptStore(fileURL: transcriptURL)
+
+        let coordinator = AgentCoordinator()
+        let backend = RecordingBackend()
+        await coordinator.register(backend)
+
+        let first = AgentConversationController(
+            coordinator: coordinator,
+            conversationID: "window-1",
+            identityStore: identityStore,
+            transcriptStore: transcriptStore
+        )
+        let started = try await first.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: "/tmp/project")
+            )
+        )
+        try await first.send("Do work")
+
+        let tool = AgentToolCall(
+            id: "tool-1",
+            title: "Read file",
+            kind: "read",
+            status: .running,
+            input: "README.md"
+        )
+        let completedTool = AgentToolCall(
+            id: "tool-1",
+            title: "Read file",
+            kind: "read",
+            status: .completed,
+            input: "README.md"
+        )
+        let toolResult = AgentToolResult(
+            toolCallID: "tool-1",
+            status: .completed,
+            output: "contents"
+        )
+        let command = AgentCommand(id: "cmd-1", command: "git status", status: .running)
+        let commandResult = AgentCommandResult(commandID: "cmd-1", exitCode: 0, output: "clean")
+        let file = AgentFileChange(path: "/tmp/project/file.swift", kind: .modified)
+
+        let completedState = Task<AgentConversationState?, Never> {
+            for await state in first.stateUpdates {
+                if state.stopReason == "end_turn",
+                   state.toolCalls == [completedTool],
+                   state.toolResults["tool-1"] == toolResult,
+                   state.commands.first?.status == .completed,
+                   state.commandOutput["cmd-1"] == "line 1\nline 2",
+                   state.commandResults["cmd-1"] == commandResult,
+                   state.fileChanges == [file],
+                   state.reasoningBlocks == ["Inspecting context"],
+                   state.messages.map(\.content) == ["Do work", "Done"] {
+                    return state
+                }
+            }
+            return nil
+        }
+
+        await backend.emit(.reasoningStarted)
+        await backend.emit(.reasoningDelta("Inspecting context"))
+        await backend.emit(.reasoningCompleted)
+        await backend.emit(.toolStarted(tool))
+        await backend.emit(.toolUpdated(completedTool))
+        await backend.emit(.toolCompleted(toolResult))
+        await backend.emit(.commandStarted(command))
+        await backend.emit(.commandOutput(commandID: "cmd-1", text: "line 1\n"))
+        await backend.emit(.commandOutput(commandID: "cmd-1", text: "line 2"))
+        await backend.emit(.commandCompleted(commandResult))
+        await backend.emit(.fileChanged(file))
+        await backend.emit(.textStarted)
+        await backend.emit(.textDelta("Done"))
+        await backend.emit(.textCompleted)
+        await backend.emit(.turnCompleted(stopReason: "end_turn"))
+        _ = try #require(await completedState.value)
+        _ = started
+
+        let second = AgentConversationController(
+            coordinator: coordinator,
+            conversationID: "window-1",
+            identityStore: AgentConversationIdentityStore(fileURL: identityURL),
+            transcriptStore: AgentConversationTranscriptStore(fileURL: transcriptURL)
+        )
+        _ = try #require(await second.restorePersistedSession())
+
+        let after = await second.stateSnapshot()
+        #expect(after.messages.map(\.content) == ["Do work", "Done"])
+        #expect(after.toolCalls == [completedTool])
+        #expect(after.toolResults["tool-1"] == toolResult)
+        #expect(after.commands == [AgentCommand(id: "cmd-1", command: "git status", status: .completed)])
+        #expect(after.commandOutput["cmd-1"] == "line 1\nline 2")
+        #expect(after.commandResults["cmd-1"] == commandResult)
+        #expect(after.fileChanges == [file])
+        #expect(after.reasoningBlocks == ["Inspecting context"])
+        #expect(after.reasoningDraft.isEmpty)
+        #expect(after.assistantDraft.isEmpty)
+        #expect(after.permissionRequest == nil)
     }
 
     @Test("close removes persisted transcript")

@@ -3,13 +3,20 @@ import Foundation
 /// Durable transcript snapshot for one Scarf conversation after a reload.
 ///
 /// This is intentionally smaller than live `AgentConversationState`: only
-/// committed messages, tool results, and usage are persisted. Drafts,
-/// permissions, and in-flight tool/command state stay in the reducer.
+/// committed messages, tool/command/file activity, reasoning blocks, and
+/// usage are persisted. Drafts, permissions, and lifecycle flags stay in
+/// the reducer.
 public struct AgentConversationTranscript: Codable, Equatable, Sendable {
     public var conversationID: String
     public var messages: [AgentMessage]
     public var toolResults: [String: AgentToolResult]
     public var usage: AgentUsage?
+    public var toolCalls: [AgentToolCall]
+    public var commands: [AgentCommand]
+    public var commandOutput: [String: String]
+    public var commandResults: [String: AgentCommandResult]
+    public var fileChanges: [AgentFileChange]
+    public var reasoningBlocks: [String]
     public var updatedAt: String?
 
     public init(
@@ -17,12 +24,24 @@ public struct AgentConversationTranscript: Codable, Equatable, Sendable {
         messages: [AgentMessage] = [],
         toolResults: [String: AgentToolResult] = [:],
         usage: AgentUsage? = nil,
+        toolCalls: [AgentToolCall] = [],
+        commands: [AgentCommand] = [],
+        commandOutput: [String: String] = [:],
+        commandResults: [String: AgentCommandResult] = [:],
+        fileChanges: [AgentFileChange] = [],
+        reasoningBlocks: [String] = [],
         updatedAt: String? = nil
     ) {
         self.conversationID = conversationID
         self.messages = messages
         self.toolResults = toolResults
         self.usage = usage
+        self.toolCalls = toolCalls
+        self.commands = commands
+        self.commandOutput = commandOutput
+        self.commandResults = commandResults
+        self.fileChanges = fileChanges
+        self.reasoningBlocks = reasoningBlocks
         self.updatedAt = updatedAt
     }
 
@@ -31,7 +50,59 @@ public struct AgentConversationTranscript: Codable, Equatable, Sendable {
         self.messages = state.messages
         self.toolResults = state.toolResults
         self.usage = state.usage
+        self.toolCalls = state.toolCalls
+        self.commands = state.commands
+        self.commandOutput = state.commandOutput
+        self.commandResults = state.commandResults
+        self.fileChanges = state.fileChanges
+        self.reasoningBlocks = state.reasoningBlocks
         self.updatedAt = updatedAt
+    }
+
+    /// True when any durable field has content worth writing.
+    public var hasDurableContent: Bool {
+        !messages.isEmpty
+            || !toolResults.isEmpty
+            || usage != nil
+            || !toolCalls.isEmpty
+            || !commands.isEmpty
+            || !commandOutput.isEmpty
+            || !commandResults.isEmpty
+            || !fileChanges.isEmpty
+            || !reasoningBlocks.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case conversationID
+        case messages
+        case toolResults
+        case usage
+        case toolCalls
+        case commands
+        case commandOutput
+        case commandResults
+        case fileChanges
+        case reasoningBlocks
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        conversationID = try container.decode(String.self, forKey: .conversationID)
+        messages = try container.decodeIfPresent([AgentMessage].self, forKey: .messages) ?? []
+        toolResults = try container.decodeIfPresent([String: AgentToolResult].self, forKey: .toolResults) ?? [:]
+        usage = try container.decodeIfPresent(AgentUsage.self, forKey: .usage)
+        // Missing activity keys decode as empty so first-slice JSON still loads.
+        toolCalls = try container.decodeIfPresent([AgentToolCall].self, forKey: .toolCalls) ?? []
+        commands = try container.decodeIfPresent([AgentCommand].self, forKey: .commands) ?? []
+        commandOutput = try container.decodeIfPresent([String: String].self, forKey: .commandOutput) ?? [:]
+        commandResults = try container.decodeIfPresent(
+            [String: AgentCommandResult].self,
+            forKey: .commandResults
+        ) ?? [:]
+        fileChanges = try container.decodeIfPresent([AgentFileChange].self, forKey: .fileChanges) ?? []
+        reasoningBlocks = try container.decodeIfPresent([String].self, forKey: .reasoningBlocks) ?? []
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
     }
 }
 

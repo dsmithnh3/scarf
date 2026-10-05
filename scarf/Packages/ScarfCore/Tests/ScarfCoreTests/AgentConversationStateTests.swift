@@ -100,6 +100,63 @@ struct AgentConversationStateTests {
         #expect(state.usage == usage)
     }
 
+    @Test("restoreDurableTranscript rehydrates activity and aligns result statuses")
+    func restoreDurableActivityFields() {
+        var state = AgentConversationState()
+        let toolCall = AgentToolCall(
+            id: "tool-1",
+            title: "Read file",
+            kind: "read",
+            status: .running,
+            input: "README.md"
+        )
+        let toolResult = AgentToolResult(
+            toolCallID: "tool-1",
+            status: .completed,
+            output: "contents"
+        )
+        let command = AgentCommand(id: "cmd-1", command: "git status", status: .running)
+        let commandResult = AgentCommandResult(commandID: "cmd-1", exitCode: 1, output: "dirty")
+        let file = AgentFileChange(path: "/tmp/a.swift", kind: .created)
+        let usage = AgentUsage(inputTokens: 2, outputTokens: 3, reasoningTokens: 1, cachedReadTokens: 0)
+
+        state.restoreDurableTranscript(
+            messages: [AgentMessage(role: .user, content: "Hi")],
+            toolResults: ["tool-1": toolResult],
+            usage: usage,
+            toolCalls: [toolCall],
+            commands: [command],
+            commandOutput: ["cmd-1": "dirty\n"],
+            commandResults: ["cmd-1": commandResult],
+            fileChanges: [file],
+            reasoningBlocks: ["Thinking"]
+        )
+
+        #expect(state.messages.map(\.content) == ["Hi"])
+        #expect(state.toolCalls == [
+            AgentToolCall(
+                id: "tool-1",
+                title: "Read file",
+                kind: "read",
+                status: .completed,
+                input: "README.md"
+            )
+        ])
+        #expect(state.toolResults["tool-1"] == toolResult)
+        #expect(state.commands == [
+            AgentCommand(id: "cmd-1", command: "git status", status: .failed)
+        ])
+        #expect(state.commandOutput["cmd-1"] == "dirty\n")
+        #expect(state.commandResults["cmd-1"] == commandResult)
+        #expect(state.fileChanges == [file])
+        #expect(state.reasoningBlocks == ["Thinking"])
+        #expect(state.usage == usage)
+        #expect(state.reasoningDraft.isEmpty)
+        #expect(state.assistantDraft.isEmpty)
+        #expect(state.permissionRequest == nil)
+        #expect(!state.isRunning)
+    }
+
     @Test("session permission error and close lifecycle is explicit")
     func lifecycleEvents() {
         var state = AgentConversationState()

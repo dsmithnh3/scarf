@@ -377,13 +377,10 @@ public actor AgentConversationController {
         guard let conversationID, let transcriptStore else { return }
         // Skip empty snapshots so a fresh start does not leave a useless row
         // before the first user turn. Close still clears explicitly.
-        guard !state.messages.isEmpty || !state.toolResults.isEmpty || state.usage != nil else {
-            return
-        }
+        let snapshot = AgentConversationTranscript(conversationID: conversationID, state: state)
+        guard snapshot.hasDurableContent else { return }
         do {
-            try transcriptStore.save(
-                AgentConversationTranscript(conversationID: conversationID, state: state)
-            )
+            try transcriptStore.save(snapshot)
         } catch {
             surfaceConversationError(
                 code: "conversation.transcript-persist-failed",
@@ -401,7 +398,13 @@ public actor AgentConversationController {
             state.restoreDurableTranscript(
                 messages: transcript.messages,
                 toolResults: transcript.toolResults,
-                usage: transcript.usage
+                usage: transcript.usage,
+                toolCalls: transcript.toolCalls,
+                commands: transcript.commands,
+                commandOutput: transcript.commandOutput,
+                commandResults: transcript.commandResults,
+                fileChanges: transcript.fileChanges,
+                reasoningBlocks: transcript.reasoningBlocks
             )
             publishState()
         } catch {
