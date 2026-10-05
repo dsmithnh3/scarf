@@ -133,9 +133,10 @@ struct AgentSlashCommandRegistryTests {
                 backendScope: .scarfLocal,
                 execution: .local
             ),
+            // Name must not share the "st" prefix or the alias query also hits it.
             AgentSlashCommandDescriptor(
-                name: "steer",
-                description: "Steer the turn",
+                name: "nudge",
+                description: "Nudge the turn",
                 backendScope: .backends([.hermes]),
                 execution: .forwardToBackend
             ),
@@ -147,13 +148,13 @@ struct AgentSlashCommandRegistryTests {
             capabilities: []
         )
         let byPrefix = registry.matchingCommands(
-            query: "ste",
+            query: "nud",
             backendID: .hermes,
             capabilities: []
         )
 
         #expect(byAlias.map(\.name) == ["status"])
-        #expect(byPrefix.map(\.name) == ["steer"])
+        #expect(byPrefix.map(\.name) == ["nudge"])
     }
 
     @Test("descriptor metadata round trips through Codable")
