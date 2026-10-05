@@ -9,8 +9,8 @@ import Foundation
 ///
 /// Message ids are deterministic from `(sessionID, Hermes row id)` so repeated
 /// fetches are stable. They will **not** match Scarf-owned random UUIDs on
-/// restore; reconcile still merges by id only (cross-source matching remains a
-/// separate product decision).
+/// restore; `AgentConversationTranscript.reconciling(withBackendHistory:)`
+/// matches those turns by role + content after the id pass.
 public enum HermesAgentConversationHistory {
     /// Namespace for deterministic `AgentMessage.id` values derived from Hermes rows.
     private static let messageIDNamespace = UUID(uuidString: "8f4e2c1a-5b6d-4e7f-9a0b-1c2d3e4f5a6b")!

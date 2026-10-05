@@ -79,13 +79,16 @@ public struct AgentConversationTranscript: Codable, Equatable, Sendable {
     /// - Empty backend history → prefer Scarf unchanged (messages + activity).
     /// - Empty Scarf messages + non-empty backend → adopt backend messages;
     ///   keep Scarf activity fields.
-    /// - Both non-empty → merge by `AgentMessage.id`: Scarf order/content wins
-    ///   on collision; backend-only ids append after; Scarf activity always
-    ///   retained.
+    /// - Both non-empty:
+    ///   1. Merge by `AgentMessage.id` (Scarf order/content wins on collision).
+    ///   2. For remaining unmatched backend messages, match by role + exact
+    ///      content against unmatched Scarf messages (greedy, Scarf order).
+    ///      Matched pairs keep the Scarf message; unmatched backend messages
+    ///      append after. Scarf activity is always retained.
     ///
-    /// Cross-source matching when backends use different id schemes than Scarf
-    /// UUIDs (Hermes state.db / ACP replay) is an open product decision and is
-    /// intentionally not invented here.
+    /// Role+content matching covers cross-source id schemes (Hermes state.db
+    /// deterministic ids vs Scarf random UUIDs) without inventing a second
+    /// conversation state system.
     public func reconciling(withBackendHistory backendMessages: [AgentMessage]) -> AgentConversationTranscript {
         if backendMessages.isEmpty {
             return self
@@ -97,10 +100,28 @@ public struct AgentConversationTranscript: Codable, Equatable, Sendable {
             return adopted
         }
 
-        var merged = messages
         let scarfIDs = Set(messages.map(\.id))
-        for message in backendMessages where !scarfIDs.contains(message.id) {
-            merged.append(message)
+        // Scarf turns already paired by id are not available for content match.
+        var claimedScarfIndices = Set(
+            messages.indices.filter { index in
+                backendMessages.contains { $0.id == messages[index].id }
+            }
+        )
+
+        var merged = messages
+        for backend in backendMessages {
+            if scarfIDs.contains(backend.id) {
+                continue
+            }
+            if let matchIndex = messages.indices.first(where: { index in
+                !claimedScarfIndices.contains(index)
+                    && messages[index].role == backend.role
+                    && messages[index].content == backend.content
+            }) {
+                claimedScarfIndices.insert(matchIndex)
+                continue
+            }
+            merged.append(backend)
         }
 
         var result = self
