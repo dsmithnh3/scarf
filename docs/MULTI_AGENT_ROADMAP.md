@@ -76,8 +76,14 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 3 Scarf-native command hints + catalog sources (`0a986fa2`) — `AgentSlashCommandCatalogs` (Scarf-local builtins, Hermes ACP static roster, empty Claude stub) + `AgentSlashCommandHint` / `hints(matching:backendID:capabilities:)`. No CLUI UI. Claude permissions stay unadvertised; Claude catalog empty until slash forwarding/discovery is verified. CI run [37356365121](https://github.com/dsmithnh3/scarf/actions/runs/37356365121) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 3 Scarf-native slash hint UI (`a8b14173`) — `AgentSlashHintPresenter` + `AgentChatViewModel` draft/hints wiring + `AgentSlashHintMenu` in the multi-agent composer (`AgentProjectChatView`). ScarfDesign tokens only (no CLUI/Opal). Hermes shows Scarf-local + ACP roster; Claude shows Scarf-local only (empty Claude catalog). CI run [37358088673](https://github.com/dsmithnh3/scarf/actions/runs/37358088673) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 3 live Hermes ACP command discovery into registry (`f60b2382`) — `AgentSlashCommandACPDiscovery` parses verified `available_commands_update` payloads; `AgentSlashCommandRegistry.mergingLiveHermesACPCommands` supersedes static Hermes fallbacks while keeping Scarf-local; `AgentEvent.availableCommandsUpdated` + state store; `HermesEventMapper` no longer drops the event; `AgentChatViewModel` rebuilds hint registry from discovery. Claude discovery stays empty. CI run [37360158348](https://github.com/dsmithnh3/scarf/actions/runs/37360158348) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 3 unified extension catalog model (`e047bd70`) — distinct kinds + Hermes fixture adapters; Claude/Scarf-local stubs empty. CI: Multi-Agent [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
+- Phase 3 Hermes loaders into catalog (read-only) — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` wire plugin walk / skill scan / MCP config roster; Claude stub empty; tests in `AgentExtensionCatalogHermesLoaderTests`. CI pending this push.
 
 ## Current TDD milestone
+
+### Phase 3 — Hermes loaders into extension catalog (read-only)
+
+**GREEN for production factory wiring.** `AgentExtensionHermesLoaders.installed` + `AgentExtensionCatalogs.makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call existing read-only loaders: `HermesPluginDirectoryScanner`, `SkillsScanner` (with `skills.disabled`), and a lightweight `config.yaml` MCP roster via `HermesYAML`. Injectable loaders cover the test seam. Claude skill catalog stays empty; no CLUI UI; no permissions UI; no Codex. Tests: `AgentExtensionCatalogHermesLoaderTests`. CI: pending this push.
 
 ### Phase 3 — live Hermes ACP slash command discovery
 
@@ -166,7 +172,8 @@ Claude process cleanup is locked without a production change. Conversation close
 1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
 2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
 3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI). Multi-Agent Tests [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
-4. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Next extension step: integrate Hermes skills/plugins read-only without regression (no CLUI transplant; no invented Claude skills).
+4. ~~Integrate Hermes skills/plugins/MCP read-only into the catalog.~~ **Done** — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call `HermesPluginDirectoryScanner`, `SkillsScanner`, and a lightweight config.yaml MCP roster; Claude skill catalog stays empty; no UI. Tests: `AgentExtensionCatalogHermesLoaderTests`.
+5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Optional next: GuardedJSONStore for identity/transcript sidecars, or Phase 4 permissions model (capability-gated).
 
 ## macOS-CLUI-CC adoption analysis
 

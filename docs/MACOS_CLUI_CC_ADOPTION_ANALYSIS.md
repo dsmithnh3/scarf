@@ -629,7 +629,7 @@ Each can be evaluated independently after multi-agent foundations are stable.
 - [x] Wire live Hermes ACP `available_commands_update` into the Scarf-native registry (`AgentSlashCommandACPDiscovery`, `mergingLiveHermesACPCommands`, event/state/ViewModel refresh).
 - [ ] Adapt CLUI slash routing concepts (Scarf-native only).
 - [x] Define unified extension catalog model (`AgentExtensionKind` / `AgentExtensionDescriptor` / `AgentExtensionCatalog`; Hermes plugin/skill/MCP fixture adapters; Claude skills + Scarf-local stubs empty; no UI).
-- [ ] Integrate Hermes skills/plugins without regression.
+- [x] Integrate Hermes skills/plugins/MCP read-only into the catalog (`AgentExtensionHermesLoaders`, `makeCatalog(fromHermesHome:)`; Claude stub empty; no UI).
 - [ ] Add Claude Code skills/MCP discovery where supported.
 - [ ] Adapt CLUI MCP catalog concepts.
 

@@ -2,9 +2,11 @@ import Foundation
 
 /// Static/fixture adapters for Scarf-native extension catalog sources.
 ///
-/// Hermes adapters map existing Scarf types when callers supply fixtures —
-/// they do not walk the filesystem or invent discovery. Claude Code skills
-/// stay an empty stub until Scarf verifies a real discovery source. Scarf-local
+/// Hermes adapters map existing Scarf types when callers supply fixtures.
+/// Production installs use ``makeCatalog(fromHermesHome:transport:)`` /
+/// ``makeCatalog(using:)`` (see ``AgentExtensionHermesLoaders``) which call
+/// the real plugin/skill/MCP readers read-only. Claude Code skills stay an
+/// empty stub until Scarf verifies a real discovery source. Scarf-local
 /// extensions are empty until one exists. Codex is deferred.
 public enum AgentExtensionCatalogs: Sendable {
 
@@ -78,9 +80,10 @@ public enum AgentExtensionCatalogs: Sendable {
         }
     }
 
-    /// Production merge: Scarf-local first, then Hermes plugins / skills /
-    /// MCP fixtures, then the empty Claude stub. Defaults stay empty so the
-    /// catalog never invents extensions without a source.
+    /// Merge Scarf-local first, then Hermes plugins / skills / MCP fixtures,
+    /// then the empty Claude stub. Defaults stay empty so the catalog never
+    /// invents extensions without a source. Prefer
+    /// ``makeCatalog(fromHermesHome:transport:)`` for installed homes.
     public static func makeCatalog(
         hermesPlugins: [HermesPluginListEntry] = [],
         hermesSkills: [HermesSkill] = [],
