@@ -319,8 +319,9 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Backend-history reconciliation smallest contract (`reconciling(withBackendHistory:)` — empty-backend prefers Scarf; id merge; Scarf activity retained).
 - [x] Cross-source turn matching (role + exact content after id pass; Scarf wins; activity retained).
 - [x] Fixture `state.db` end-to-end restore through `restorePersistedSession` (`AgentConversationHermesStateDBRestoreTests`).
-- [ ] Optional GuardedJSONStore adoption for the identity/transcript sidecars (single store per file; no parallel writer).
+- [x] GuardedJSONStore for identity/transcript sidecars (`ee56c946` — `GuardedSidecarStore` / `refuseForever`; one store per file).
 - [ ] Claude structured history when a verified protocol/file source exists (**blocked** — no verified source found; do not invent).
+- [ ] Claude `can_use_tool` live round trip through coordinator **before** advertising `.permissions` (wire encode/decode exists; receive/respond path blocked).
 
 ### Phase 2 — adopt high-value CLUI patterns
 
