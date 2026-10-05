@@ -58,6 +58,8 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - `83cf7bfa` — resume closes the previous session only when the resumed identity differs (other session id, other backend, or an id minted by resume). Resuming the active identity does not close it. A failed close keeps the previous session active and releases the resumed session.
 - `e5de0682` — after `close()`, scoped and legacy unscoped events are ignored. A late `sessionStarted` cannot resurrect the conversation. Active legacy backends still receive unscoped events.
 - `568f1366` — rapid sequential replacements close each outgoing session and leave only the last one active.
+- `8daeeb59` — CI run [37313877576](https://github.com/dsmithnh3/scarf/actions/runs/37313877576) passed Multi-Agent Tests, ScarfCore Compile Gate, and macOS App Build.
+- `a1234f23` — already-green lock for Claude process cleanup. `conversationCloseTerminatesClaudeProcess` proves conversation close terminates the Claude process. `turnCancelInterruptsClaudeWithoutTerminatingProcess` proves turn cancel delivers a control interrupt and leaves that process running until a later close. `ClaudeCodeBackend.close` already cancelled the stream tasks and closed the process manager, and `cancel` already sent the interrupt, so no production code changed. Dropping `manager.close()` makes the close test fail with `processStillRunning`.
 
 ## Current TDD milestone
 
@@ -73,12 +75,13 @@ Failure semantics:
 
 Hermes remains the default route. Claude permission capability stays unset.
 
+Claude process cleanup is locked without a production change. Conversation close terminates the Claude process. Turn cancel sends a control interrupt and does not terminate that process. The next lifecycle step is surfacing backend process failures in UI state.
+
 ## Next lifecycle milestones
 
-1. Prove Claude Code `close`/`cancel` releases the process channel with an app-target test. `ClaudeProcessManager` already closes the previous channel on replacement and `ClaudeCodeBackend.close` cancels stream tasks and closes the manager; this VM cannot compile the macOS app target.
-2. Add lifecycle observability where backend process failures need to surface in UI state.
-3. Audit Claude event normalization against macOS-CLUI-CC once that repository is readable. It was not accessible from this environment.
-4. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
+1. Add lifecycle observability where backend process failures need to surface in UI state.
+2. Audit Claude event normalization against macOS-CLUI-CC once that repository is readable. It was not accessible from this environment.
+3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -192,7 +195,7 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Late scoped and unscoped events after close (`e5de0682`).
 - [x] Resume replacement cleanup, including a minted session id and a backend switch (`83cf7bfa`).
 - [x] Rapid sequential replacements (`568f1366`).
-- [ ] App-target proof that Claude close/cancel releases the process. The process manager already closes a replaced channel; Linux cannot compile that target.
+- [x] Claude close/cancel process release (`a1234f23`). Behavior was already present. Close terminates the process (`conversationCloseTerminatesClaudeProcess`). Cancel interrupts the turn and leaves the process alive (`turnCancelInterruptsClaudeWithoutTerminatingProcess`).
 - [ ] Claude Code installation/version diagnostics.
 - [ ] Session resume/history fidelity beyond identity cleanup.
 - [ ] Capability contract audit. Claude permissions remain unimplemented and unadvertised.
