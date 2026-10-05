@@ -214,6 +214,137 @@ struct AgentConversationControllerTests {
         #expect(await backend.closed() == [first.id])
     }
 
+    @Test("resuming a different session closes the previous session")
+    func resumeReplacementClosesPrevious() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = RecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        let first = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+        let replacement = AgentSession(id: "session-b", backendID: .claudeCode, workingDirectory: nil)
+        let resumed = try await controller.resumeSession(replacement)
+
+        #expect(first.id == "session-1")
+        #expect(resumed.id == "session-b")
+        #expect(await backend.closed() == ["session-1"])
+        #expect((await controller.stateSnapshot()).session == resumed)
+        #expect((await controller.stateSnapshot()).isClosed == false)
+    }
+
+    @Test("resuming the active session does not close it")
+    func resumeActiveSessionDoesNotClose() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = RecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        let first = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+        let resumed = try await controller.resumeSession(first)
+
+        #expect(resumed.id == first.id)
+        #expect(await backend.closed().isEmpty)
+        #expect((await controller.stateSnapshot()).session?.id == first.id)
+        #expect((await controller.stateSnapshot()).isClosed == false)
+    }
+
+    @Test("resuming on another backend closes the previous backend session")
+    func resumeSwitchesBackendAndClosesPrevious() async throws {
+        let coordinator = AgentCoordinator()
+        let claude = RecordingBackend(id: .claudeCode, displayName: "Claude Code")
+        let hermes = RecordingBackend(id: .hermes, displayName: "Hermes")
+        await coordinator.register(claude)
+        await coordinator.register(hermes)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        let first = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+        let hermesSession = AgentSession(
+            id: "hermes-existing",
+            backendID: .hermes,
+            workingDirectory: nil
+        )
+        let resumed = try await controller.resumeSession(hermesSession)
+
+        #expect(await claude.closed() == [first.id])
+        #expect(await hermes.closed().isEmpty)
+        #expect(resumed.backendID == .hermes)
+        #expect(resumed.id == "hermes-existing")
+        #expect((await controller.stateSnapshot()).session == resumed)
+    }
+
+    @Test("resume that returns a new session id closes the previous active session")
+    func resumeMintedIdentityClosesPrevious() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = RemintingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        let first = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+        let resumed = try await controller.resumeSession(first)
+
+        #expect(first.id == "session-1")
+        #expect(resumed.id == "session-1-live")
+        #expect(await backend.closed() == ["session-1"])
+        #expect((await controller.stateSnapshot()).session == resumed)
+        #expect((await controller.stateSnapshot()).isClosed == false)
+    }
+
+    private actor RemintingBackend: AgentBackend {
+        nonisolated let id: AgentID = .claudeCode
+        nonisolated let displayName = "Reminting"
+        nonisolated let capabilities: AgentCapabilities = [.streaming, .sessions, .resume]
+        nonisolated let events: AsyncStream<AgentEvent>
+        private let continuation: AsyncStream<AgentEvent>.Continuation
+        private var closedSessions: [String] = []
+        private var nextSessionNumber = 0
+
+        init() {
+            var continuation: AsyncStream<AgentEvent>.Continuation!
+            events = AsyncStream { continuation = $0 }
+            self.continuation = continuation
+        }
+
+        nonisolated func installationStatus() async -> AgentInstallationStatus { .available(version: nil) }
+        nonisolated func models() async throws -> [AgentModel] { [] }
+
+        func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
+            nextSessionNumber += 1
+            return AgentSession(
+                id: "session-\(nextSessionNumber)",
+                backendID: id,
+                workingDirectory: configuration.workingDirectory
+            )
+        }
+
+        func resumeSession(_ session: AgentSession) async throws -> AgentSession {
+            AgentSession(
+                id: session.id + "-live",
+                backendID: id,
+                workingDirectory: session.workingDirectory,
+                metadata: session.metadata
+            )
+        }
+
+        func send(_ message: AgentMessage, in session: AgentSession) async throws {}
+        func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws {}
+        func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws {}
+        func cancel(session: AgentSession) async {}
+        func close(session: AgentSession) async { closedSessions.append(session.id) }
+        func closed() -> [String] { closedSessions }
+    }
+
     private actor ScopedRecordingBackend: SessionScopedAgentBackend {
         nonisolated let id: AgentID = .claudeCode
         nonisolated let displayName = "Scoped Claude"

@@ -68,6 +68,19 @@ public actor AgentConversationController {
     public func resumeSession(_ session: AgentSession) async throws -> AgentSession {
         await ensureEventLoop()
         let resumed = try await coordinator.resumeSession(session)
+        // Close only after resume returns the effective identity. Backends may
+        // keep the requested id or mint a new one; the active session is
+        // released only when that identity actually changes. A failed close
+        // leaves the previous session active and drops the resumed session
+        // instead of claiming both.
+        if let previous = activeSession, !sameSession(previous, resumed) {
+            do {
+                try await retireActiveSessionForReplacement()
+            } catch {
+                try? await coordinator.close(session: resumed)
+                throw error
+            }
+        }
         activeBackendID = resumed.backendID
         activeSession = resumed
         state = AgentConversationState()
@@ -136,6 +149,10 @@ public actor AgentConversationController {
 
     public func stateSnapshot() -> AgentConversationState {
         state
+    }
+
+    private func sameSession(_ lhs: AgentSession, _ rhs: AgentSession) -> Bool {
+        lhs.backendID == rhs.backendID && lhs.id == rhs.id
     }
 
     /// Closes the active session so a replacement can take its place.
