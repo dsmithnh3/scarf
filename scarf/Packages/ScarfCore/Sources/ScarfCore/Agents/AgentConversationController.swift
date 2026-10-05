@@ -52,6 +52,7 @@ public actor AgentConversationController {
         )
         activeBackendID = backendID
         activeSession = session
+        state = AgentConversationState()
         state.apply(.sessionStarted(session))
         publishState()
         return session
@@ -63,6 +64,7 @@ public actor AgentConversationController {
         let resumed = try await coordinator.resumeSession(session)
         activeBackendID = resumed.backendID
         activeSession = resumed
+        state = AgentConversationState()
         state.apply(.sessionStarted(resumed))
         publishState()
         return resumed
@@ -121,6 +123,7 @@ public actor AgentConversationController {
             throw AgentConversationControllerError.noActiveSession
         }
         try await coordinator.close(session: session)
+        activeSession = nil
         state.apply(.sessionClosed)
         publishState()
     }
