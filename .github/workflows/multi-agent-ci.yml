@@ -49,8 +49,10 @@ jobs:
         run: |
           swift --version
           xcodebuild -version
-      - name: Run project agent preference tests
-        run: swift test --filter ProjectAgentPreferenceStoreTests
+      - name: Run multi-agent behavior tests
+        run: >-
+          swift test --filter
+          'AgentConversation|AgentCoordinator|ProjectAgentPreference'
 
   macos-build:
     name: macOS App Build
