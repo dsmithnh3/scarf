@@ -635,9 +635,9 @@ Each can be evaluated independently after multi-agent foundations are stable.
 
 ### Phase 4 — permissions
 
-- [ ] Define generic permission request/response model.
-- [ ] Adapt CLUI permission coordinator concepts.
-- [ ] Preserve Hermes permission behavior.
+- [x] Define generic permission request/response model (`AgentPermissionRecord` / status / scope).
+- [x] Adapt CLUI permission coordinator concepts (`AgentPermissionCoordinator` queue state machine; no UI transplant).
+- [x] Preserve Hermes permission behavior (numeric ACP id round-trip via `hermes(from:)` / `asAgentPermissionRequest`; queue semantics match Rich Chat).
 - [ ] Implement Claude permission round trip.
 - [ ] Enable Claude permission capability only after tests pass.
 

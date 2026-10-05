@@ -1,4 +1,5 @@
 name: Multi-Agent Branch CI
+# Phase 4 permission coordinator filter includes AgentPermission.
 # Phase 3 extension catalog filter includes AgentExtension|AgentSlash.
 
 on:
@@ -54,7 +55,7 @@ jobs:
       - name: Run multi-agent behavior tests
         run: >-
           swift test --filter
-          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension'
+          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission'
 
   macos-build:
     name: macOS App Build
