@@ -625,8 +625,8 @@ Each can be evaluated independently after multi-agent foundations are stable.
 
 - [x] Define backend-aware Scarf command registry model (`AgentSlashCommandDescriptor` / `AgentSlashCommandRegistry`; capability + backend gating; no UI yet).
 - [x] Wire Scarf-native catalog sources + hint-list query (`AgentSlashCommandCatalogs`, `AgentSlashCommandHint` / `hints`; Hermes ACP static truth; Claude stub empty; CI [37356365121](https://github.com/dsmithnh3/scarf/actions/runs/37356365121)).
+- [x] Build Scarf-native slash hint UI onto `hints(...)` (`AgentSlashHintPresenter`, `AgentChatViewModel` draft wiring, `AgentSlashHintMenu`; ScarfDesign only; no CLUI transplant).
 - [ ] Adapt CLUI slash routing concepts (Scarf-native only).
-- [ ] Build Scarf-native slash hint UI onto `hints(...)`.
 - [ ] Define unified extension catalog model.
 - [ ] Integrate Hermes skills/plugins without regression.
 - [ ] Add Claude Code skills/MCP discovery where supported.

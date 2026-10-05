@@ -14,10 +14,24 @@ final class AgentChatViewModel {
     private let controller: AgentConversationController
     private let backendID: AgentID
     private let workingDirectory: URL
+    private let slashHintPresenter: AgentSlashHintPresenter
 
     private(set) var state = AgentConversationState()
     private(set) var isStarted = false
     private(set) var startupError: String?
+
+    /// Composer draft owned by the view model so slash-hint presentation can
+    /// update with every keystroke without duplicating registry logic in SwiftUI.
+    var draft = "" {
+        didSet { refreshSlashHints() }
+    }
+
+    private(set) var slashHintPresentation = AgentSlashHintPresentation(
+        isVisible: false,
+        query: "",
+        hints: [],
+        catalogIsEmpty: false
+    )
 
     @ObservationIgnored
     private var stateTask: Task<Void, Never>?
@@ -25,16 +39,30 @@ final class AgentChatViewModel {
     init(
         controller: AgentConversationController,
         backendID: AgentID,
-        workingDirectory: URL
+        workingDirectory: URL,
+        slashHintPresenter: AgentSlashHintPresenter? = nil
     ) {
         self.controller = controller
         self.backendID = backendID
         self.workingDirectory = workingDirectory
+        self.slashHintPresenter = slashHintPresenter ?? AgentSlashHintPresenter(
+            backendID: backendID,
+            capabilities: AgentSlashHintPresenter.defaultCapabilities(for: backendID)
+        )
         observeState()
+        refreshSlashHints()
     }
 
     deinit {
         stateTask?.cancel()
+    }
+
+    var isSlashHintMenuVisible: Bool {
+        slashHintPresentation.isVisible
+    }
+
+    var slashHints: [AgentSlashCommandHint] {
+        slashHintPresentation.hints
     }
 
     func start() async {
@@ -60,6 +88,20 @@ final class AgentChatViewModel {
         try await controller.send(trimmed)
     }
 
+    func sendDraft() async throws {
+        let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        draft = ""
+        try await send(message)
+    }
+
+    /// Accept a slash hint into the composer. Does not send — the user can
+    /// still edit arguments before submitting.
+    func acceptSlashHint(_ hint: AgentSlashCommandHint) {
+        guard let insertion = slashHintPresenter.accepting(hint, draft: draft) else { return }
+        draft = insertion
+    }
+
     func cancel() async throws {
         try await controller.cancel()
     }
@@ -82,6 +124,10 @@ final class AgentChatViewModel {
 
     func cancelPermission(_ request: AgentPermissionRequest) async throws {
         try await controller.cancelPermission(request)
+    }
+
+    private func refreshSlashHints() {
+        slashHintPresentation = slashHintPresenter.presentation(for: draft)
     }
 
     private func observeState() {

@@ -1,5 +1,6 @@
 import SwiftUI
 import ScarfCore
+import ScarfDesign
 
 /// Strangler router for Chat.
 ///
@@ -116,10 +117,10 @@ private struct AgentBackendUnavailableView: View {
 /// stream end-to-end before porting Hermes' richer chat affordances.
 private struct AgentProjectChatView: View {
     let project: ScarfProject
-    let viewModel: AgentChatViewModel
+    @Bindable var viewModel: AgentChatViewModel
 
     @Environment(AppCoordinator.self) private var coordinator
-    @State private var draft = ""
+    @State private var selectedSlashHintIndex = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -134,6 +135,14 @@ private struct AgentProjectChatView: View {
         }
         .onDisappear {
             Task { await viewModel.close() }
+        }
+        .onChange(of: viewModel.slashHintPresentation.query) { _, _ in
+            selectedSlashHintIndex = 0
+        }
+        .onChange(of: viewModel.slashHints.count) { _, count in
+            if selectedSlashHintIndex >= count {
+                selectedSlashHintIndex = max(0, count - 1)
+            }
         }
     }
 
@@ -217,19 +226,70 @@ private struct AgentProjectChatView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message \(backendDisplayName)…", text: $draft, axis: .vertical)
+        VStack(alignment: .leading, spacing: 0) {
+            if viewModel.isSlashHintMenuVisible {
+                AgentSlashHintMenu(
+                    presentation: viewModel.slashHintPresentation,
+                    selectedIndex: $selectedSlashHintIndex,
+                    onSelect: { hint in
+                        viewModel.acceptSlashHint(hint)
+                    }
+                )
+                .id(viewModel.slashHintPresentation.query)
+                .padding(.horizontal, ScarfSpace.s3)
+                .padding(.top, ScarfSpace.s2)
+            }
+
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField(
+                    "Message \(backendDisplayName)…",
+                    text: $viewModel.draft,
+                    axis: .vertical
+                )
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...6)
-                .onSubmit { sendDraft() }
+                .onSubmit { submitComposer() }
+                .onKeyPress(.upArrow, phases: .down) { _ in
+                    guard viewModel.isSlashHintMenuVisible, !viewModel.slashHints.isEmpty else {
+                        return .ignored
+                    }
+                    selectedSlashHintIndex = max(0, selectedSlashHintIndex - 1)
+                    return .handled
+                }
+                .onKeyPress(.downArrow, phases: .down) { _ in
+                    guard viewModel.isSlashHintMenuVisible, !viewModel.slashHints.isEmpty else {
+                        return .ignored
+                    }
+                    selectedSlashHintIndex = min(
+                        viewModel.slashHints.count - 1,
+                        selectedSlashHintIndex + 1
+                    )
+                    return .handled
+                }
+                .onKeyPress(.escape, phases: .down) { _ in
+                    guard viewModel.isSlashHintMenuVisible else { return .ignored }
+                    viewModel.draft = ""
+                    return .handled
+                }
+                .onKeyPress(.tab, phases: .down) { _ in
+                    guard viewModel.isSlashHintMenuVisible,
+                          viewModel.slashHints.indices.contains(selectedSlashHintIndex)
+                    else { return .ignored }
+                    viewModel.acceptSlashHint(viewModel.slashHints[selectedSlashHintIndex])
+                    return .handled
+                }
 
-            Button("Send") {
-                sendDraft()
+                Button("Send") {
+                    sendDraft()
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(
+                    !viewModel.isStarted
+                        || viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
             }
-            .keyboardShortcut(.return, modifiers: .command)
-            .disabled(!viewModel.isStarted || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(14)
         }
-        .padding(14)
     }
 
     private var backendDisplayName: String {
@@ -258,11 +318,21 @@ private struct AgentProjectChatView: View {
         try? await viewModel.send(initialPrompt)
     }
 
+    private func submitComposer() {
+        // Enter while the slash menu is open inserts the highlighted hint so
+        // the user can add arguments. Explicit Send / ⌘↩ always transmits.
+        if viewModel.isSlashHintMenuVisible,
+           viewModel.slashHints.indices.contains(selectedSlashHintIndex)
+        {
+            viewModel.acceptSlashHint(viewModel.slashHints[selectedSlashHintIndex])
+            return
+        }
+        sendDraft()
+    }
+
     private func sendDraft() {
-        let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, viewModel.isStarted else { return }
-        draft = ""
-        Task { try? await viewModel.send(message) }
+        guard viewModel.isStarted else { return }
+        Task { try? await viewModel.sendDraft() }
     }
 }
 
