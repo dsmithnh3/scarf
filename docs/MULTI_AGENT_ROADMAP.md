@@ -75,13 +75,16 @@ Failure semantics:
 
 Hermes remains the default route. Claude permission capability stays unset.
 
-Claude process cleanup is locked without a production change. Conversation close terminates the Claude process. Turn cancel sends a control interrupt and does not terminate that process. The next lifecycle step is surfacing backend process failures in UI state.
+Claude process cleanup is locked without a production change. Conversation close terminates the Claude process. Turn cancel sends a control interrupt and does not terminate that process.
+
+**CI gap (in progress):** those process tests live in `scarf/scarfTests` and were not executed by Multi-Agent Tests (ScarfCore filter) or macOS App Build. A dedicated `Claude Process Tests` job runs `xcodebuild test -only-testing:scarfTests/ClaudeCodeBackendTests` on macOS so close/cancel process release cannot regress silently.
 
 ## Next lifecycle milestones
 
-1. Add lifecycle observability where backend process failures need to surface in UI state.
-2. Audit Claude event normalization against macOS-CLUI-CC once that repository is readable. It was not accessible from this environment.
-3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
+1. Land the Claude Process Tests CI gate and confirm it executes the close/cancel cases.
+2. Audit Claude installation/version diagnostics, resume identity, event normalization (CLUI if readable), and capability honesty.
+3. Surface backend process failures (failed launch / unexpected exit / broken stream) in `AgentConversationState` via the existing error path.
+4. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
 
