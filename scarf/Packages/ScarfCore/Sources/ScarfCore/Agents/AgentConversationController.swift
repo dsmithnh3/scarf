@@ -45,7 +45,7 @@ public actor AgentConversationController {
         backendID: AgentID,
         configuration: AgentSessionConfiguration
     ) async throws -> AgentSession {
-        ensureEventLoop()
+        await ensureEventLoop()
         let session = try await coordinator.createSession(
             backendID: backendID,
             configuration: configuration
@@ -60,7 +60,7 @@ public actor AgentConversationController {
 
     @discardableResult
     public func resumeSession(_ session: AgentSession) async throws -> AgentSession {
-        ensureEventLoop()
+        await ensureEventLoop()
         let resumed = try await coordinator.resumeSession(session)
         activeBackendID = resumed.backendID
         activeSession = resumed
@@ -132,9 +132,9 @@ public actor AgentConversationController {
         state
     }
 
-    private func ensureEventLoop() {
+    private func ensureEventLoop() async {
         guard eventTask == nil else { return }
-        let stream = coordinator.routedEvents
+        let stream = await coordinator.subscribeToRoutedEvents()
         eventTask = Task { [weak self] in
             for await routed in stream {
                 guard !Task.isCancelled else { break }
@@ -145,6 +145,14 @@ public actor AgentConversationController {
 
     private func consume(_ routed: AgentRoutedEvent) {
         guard routed.backendID == activeBackendID else { return }
+
+        // Scoped backends can host multiple sessions simultaneously. Ignore an
+        // event carrying a different session id; unscoped legacy backends retain
+        // their previous backend-only routing behavior for compatibility.
+        if let routedSessionID = routed.sessionID {
+            guard routedSessionID == activeSession?.id else { return }
+        }
+
         state.apply(routed.event)
 
         if case .sessionStarted(let session) = routed.event {
