@@ -30,4 +30,23 @@ struct HermesBackendTests {
         let backend = HermesBackend(context: .local, installationProbe: { .available(version: "3.5-test") })
         #expect(await backend.installationStatus() == .available(version: "3.5-test"))
     }
+
+    @Test("fetchConversationHistory returns loader results for Hermes sessions")
+    func fetchConversationHistory() async throws {
+        let expected = [
+            AgentMessage(role: .user, content: "from state.db"),
+            AgentMessage(role: .assistant, content: "mapped"),
+        ]
+        let backend = HermesBackend(
+            context: .local,
+            installationProbe: { .available(version: "test") },
+            conversationHistoryLoader: { _, sessionID in
+                #expect(sessionID == "sess-hermes-1")
+                return expected
+            }
+        )
+        let session = AgentSession(id: "sess-hermes-1", backendID: .hermes)
+        let history = try await backend.fetchConversationHistory(for: session)
+        #expect(history == expected)
+    }
 }

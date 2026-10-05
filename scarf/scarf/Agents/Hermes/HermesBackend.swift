@@ -8,6 +8,7 @@ import ScarfCore
 /// configuration, etc.) remain owned by their current implementations.
 actor HermesBackend: SessionScopedAgentBackend {
     typealias InstallationProbe = @Sendable () async -> AgentInstallationStatus
+    typealias ConversationHistoryLoader = @Sendable (ServerContext, String) async throws -> [AgentMessage]
 
     nonisolated let id: AgentID = .hermes
     nonisolated let displayName = "Hermes"
@@ -33,6 +34,7 @@ actor HermesBackend: SessionScopedAgentBackend {
 
     private let context: ServerContext
     private let installationProbe: InstallationProbe
+    private let conversationHistoryLoader: ConversationHistoryLoader
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var clients: [String: ACPClient] = [:]
@@ -40,9 +42,11 @@ actor HermesBackend: SessionScopedAgentBackend {
 
     init(
         context: ServerContext = .local,
-        installationProbe: InstallationProbe? = nil
+        installationProbe: InstallationProbe? = nil,
+        conversationHistoryLoader: ConversationHistoryLoader? = nil
     ) {
         self.context = context
+        self.conversationHistoryLoader = conversationHistoryLoader ?? Self.defaultConversationHistoryLoader
 
         var continuation: AsyncStream<AgentEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
@@ -134,13 +138,22 @@ actor HermesBackend: SessionScopedAgentBackend {
         return resumed
     }
 
-    /// ACP `session/load` replays history as streaming chunks, not a
-    /// structured `[AgentMessage]` payload. Returning `[]` keeps restore
-    /// reconcile Scarf-preferring until a verified structured source
-    /// (state.db read or replay collector) is wired. Do not advertise a
-    /// history capability.
+    /// Structured history from read-only Hermes `state.db` rows (same SQL path
+    /// as Rich Chat). ACP `session/load` streaming replay is unchanged. Do not
+    /// advertise a history capability until end-to-end restore matching is
+    /// product-approved (Hermes row ids ≠ Scarf UUIDs).
     func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
-        []
+        guard session.backendID == .hermes else {
+            throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
+        }
+        return try await conversationHistoryLoader(context, session.id)
+    }
+
+    nonisolated private static func defaultConversationHistoryLoader(
+        context: ServerContext,
+        sessionID: String
+    ) async throws -> [AgentMessage] {
+        try await HermesAgentConversationHistory.fetchMessages(sessionID: sessionID, context: context)
     }
 
     func send(_ message: AgentMessage, in session: AgentSession) async throws {
