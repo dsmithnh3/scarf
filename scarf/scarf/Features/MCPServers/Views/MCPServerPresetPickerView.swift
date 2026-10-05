@@ -100,7 +100,7 @@ struct MCPServerPresetPickerView: View {
                 if !preset.requiredEnvKeys.isEmpty {
                     Text("Requires: \(preset.requiredEnvKeys.joined(separator: ", "))")
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                 }
             }
             .padding(12)
@@ -192,7 +192,7 @@ struct MCPServerPresetPickerView: View {
                 if required {
                     Text("required")
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                 }
             }
             .frame(width: 240, alignment: .leading)

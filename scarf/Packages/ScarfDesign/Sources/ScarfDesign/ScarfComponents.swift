@@ -12,7 +12,10 @@ import SwiftUI
 // MARK: - Buttons
 
 public struct ScarfPrimaryButton: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+
     public init() {}
+
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scarfStyle(.bodyEmph)
@@ -21,10 +24,19 @@ public struct ScarfPrimaryButton: ButtonStyle {
             .padding(.vertical, ScarfSpace.s2)
             .background(
                 RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
-                    .fill(configuration.isPressed ? ScarfColor.accentActive : ScarfColor.accent)
+                    .fill(primaryFill(isPressed: configuration.isPressed))
             )
             .scarfShadow(.sm)
             .opacity(configuration.isPressed ? 0.95 : 1)
+    }
+
+    private func primaryFill(isPressed: Bool) -> Color {
+        if colorScheme == .dark {
+            return isPressed
+                ? ScarfColor.accentActive.opacity(0.88)
+                : ScarfColor.accentActive
+        }
+        return isPressed ? ScarfColor.accentActive : ScarfColor.accent
     }
 }
 

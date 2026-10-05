@@ -193,7 +193,7 @@ struct NousSignInSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                 Text(billingURL == nil ? "Sign-in didn't complete" : "Subscription required")
                     .scarfStyle(.headline)
             }

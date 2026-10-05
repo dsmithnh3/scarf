@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 import ScarfCore
 
 /// Sheet-presented TextEditor for the currently-selected skill file.
@@ -27,7 +28,7 @@ struct SkillEditorSheet: View {
                 if let error = vm.contentError {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                             .accessibilityHidden(true)
                         Text(error)
                             .font(.caption)
@@ -38,7 +39,7 @@ struct SkillEditorSheet: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.orange.opacity(0.12))
+                    .background(ScarfColor.warning.opacity(0.12))
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(String(localized: "Not saved: \(error)"))
                 }

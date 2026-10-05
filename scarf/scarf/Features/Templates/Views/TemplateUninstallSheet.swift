@@ -181,7 +181,7 @@ struct TemplateUninstallSheet: View {
                     fileRow(
                         label: entry,
                         systemImage: "exclamationmark.shield",
-                        color: .orange,
+                        color: ScarfColor.warning,
                         tag: "skipped"
                     )
                 }
@@ -274,7 +274,7 @@ struct TemplateUninstallSheet: View {
                         // Redundant with the sentence beside it (GW-F1's
                         // branch, held to the same rule as the two above).
                         Image(systemName: "exclamationmark.shield")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                             .font(.caption)
                             .accessibilityHidden(true)
                         Text("MEMORY.md couldn't be read, so its template section can't be removed.")
@@ -426,7 +426,7 @@ struct TemplateUninstallSheet: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "folder.badge.questionmark")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                 Text("Project folder kept")
                     .scarfStyle(.headline)
             }
@@ -456,7 +456,7 @@ struct TemplateUninstallSheet: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.orange.opacity(0.10))
+                .fill(ScarfColor.warning.opacity(0.10))
         )
     }
 
@@ -467,7 +467,7 @@ struct TemplateUninstallSheet: View {
             // of the heading.
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.orange)
+                .foregroundStyle(ScarfColor.warning)
                 .accessibilityHidden(true)
             VStack(spacing: 16) {
                 Text("Uninstall Failed").font(.title2.bold())

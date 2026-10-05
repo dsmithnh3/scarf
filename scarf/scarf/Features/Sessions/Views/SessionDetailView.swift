@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 import ScarfCore
 
 struct SessionDetailView: View {
@@ -57,7 +58,7 @@ struct SessionDetailView: View {
                 Label(session.source, systemImage: session.sourceIcon)
                 if session.isSubagent {
                     Label("Subagent", systemImage: "arrow.triangle.branch")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                 }
                 if let userId = session.userId, !userId.isEmpty, session.source != "cli" {
                     Label(userId, systemImage: "person")
@@ -125,7 +126,7 @@ struct SessionDetailView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.triangle.branch")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                         Text(sub.displayTitle)
                             .lineLimit(1)
                         Spacer()
@@ -211,7 +212,7 @@ struct MessageBubble: View {
                                 .textSelection(.enabled)
                         }
                         .font(.caption.bold())
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                         .onChange(of: reasoningExpanded) { _, expanded in
                             guard expanded else { return }
                             Task { await loadFullReasoningIfNeeded() }
@@ -286,7 +287,7 @@ struct ToolCallBadge: View {
         switch call.toolKind {
         case .read: return .green
         case .edit: return .blue
-        case .execute: return .orange
+        case .execute: return ScarfColor.warning
         case .fetch: return .purple
         case .browser: return .indigo
         case .other: return .secondary

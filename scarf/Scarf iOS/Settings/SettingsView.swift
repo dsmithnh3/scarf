@@ -276,7 +276,7 @@ struct SettingsView: View {
             ) {
                 Text(verbatim: notice)
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                     .accessibilityLabel(Text(verbatim: notice))
             }
             if !vm.config.timezone.isEmpty {

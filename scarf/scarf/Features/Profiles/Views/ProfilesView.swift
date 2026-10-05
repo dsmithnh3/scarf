@@ -561,7 +561,7 @@ private struct RemoteProfilePathSheet: View {
         case .warn(let detail):
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                 Text(detail).font(.caption)
             }
         }

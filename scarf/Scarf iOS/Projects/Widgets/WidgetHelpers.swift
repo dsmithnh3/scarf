@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 
 /// Map a server-supplied color name to a SwiftUI `Color`. iOS twin of
 /// the Mac helper at `scarf/Features/Projects/Views/Widgets/WidgetHelpers.swift`.
@@ -7,7 +8,8 @@ import SwiftUI
 func parseColor(_ name: String?) -> Color {
     switch name?.lowercased() {
     case "red": return .red
-    case "orange": return .orange
+    case "orange": return ScarfColor.warning
+    case "accent": return ScarfColor.accent
     case "yellow": return .yellow
     case "green": return .green
     case "blue": return .blue

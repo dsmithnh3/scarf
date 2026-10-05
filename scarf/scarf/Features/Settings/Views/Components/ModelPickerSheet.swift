@@ -507,7 +507,7 @@ struct ModelPickerSheet: View {
             if let err = nousRefreshError, !nousIsRefreshing {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                     Text(err)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -809,7 +809,7 @@ struct ModelPickerSheet: View {
                localBaseURL.trimmingCharacters(in: .whitespaces).isEmpty {
                 Text("Required — this server has no default endpoint.")
                     .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
             } else if descriptor.providerID == "ollama" {
                 Text("Always saved to config — without it, chats silently route to OpenRouter.")
                     .font(.caption2)
@@ -957,7 +957,7 @@ struct ModelPickerSheet: View {
                 if blocked {
                     Image(systemName: "lock")
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                 }
                 // Ollama /api/show reported native multimodal support
                 // (`capabilities` includes "vision"). Only a confident

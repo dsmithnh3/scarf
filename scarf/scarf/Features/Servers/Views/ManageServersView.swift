@@ -110,7 +110,7 @@ struct ManageServersView: View {
             // sitting on the whole banner and swallowing it.
             VStack(alignment: .leading, spacing: 4) {
                 Label("Your server list couldn't be read", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                     .scarfStyle(.headline)
                 // GW-F6 / audit DI M6: "until it can read it again" promised
                 // a retry that did not exist — nothing re-read the file for
@@ -176,7 +176,7 @@ struct ManageServersView: View {
         VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 4) {
                 Label("Your server list couldn't be saved", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                     .scarfStyle(.headline)
                 Text("Changes you make here are kept in this session only: \(failure)")
                     .font(.caption)

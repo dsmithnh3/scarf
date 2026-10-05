@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 import ScarfCore
 import AppKit
 
@@ -55,7 +56,7 @@ struct RemoteDiagnosticsView: View {
                 } else {
                     Label(viewModel.summary, systemImage: viewModel.allPassed ? "checkmark.seal" : "info.circle")
                         .font(.callout)
-                        .foregroundStyle(viewModel.allPassed ? .green : .orange)
+                        .foregroundStyle(viewModel.allPassed ? .green : ScarfColor.warning)
                 }
                 Spacer()
                 if !viewModel.probes.isEmpty {

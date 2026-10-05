@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 import ScarfCore
 
 struct MCPServerTestResultView: View {
@@ -22,7 +23,7 @@ struct MCPServerTestResultView: View {
         switch confidence {
         case .confirmed: .green
         case .failed: .red
-        case .unconfirmed: .orange
+        case .unconfirmed: ScarfColor.warning
         }
     }
 
