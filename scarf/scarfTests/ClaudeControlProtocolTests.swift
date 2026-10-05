@@ -54,7 +54,8 @@ struct ClaudeControlProtocolTests {
     @Test("can_use_tool control request is decoded for future host approval UI")
     func permissionRequestDecoding() throws {
         let line = #"{"type":"control_request","request_id":"req_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/a.txt","content":"hello"}}}"#
-        let request = try #require(try ClaudeControlProtocol.decodePermissionRequest(line))
+        let decoded = try ClaudeControlProtocol.decodePermissionRequest(line)
+        let request = try #require(decoded)
         #expect(request.requestID == "req_perm")
         #expect(request.toolName == "Write")
         #expect(request.inputJSON.contains("file_path"))
