@@ -72,7 +72,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ### Phase 2 — deeper resume fidelity (activity fields)
 
-**GREEN for durable activity restore.** Same reload boundary as identity/transcript: save → new store/controller → restore identity **and** rehydrate messages plus toolCalls, toolResults, commands/output/results, fileChanges, reasoningBlocks, and usage. Status merge follows live reducer id semantics. `startSession` still clears prior transcript; `close` removes it. Backend-history reconciliation with Claude/Hermes remote history remains deferred. Optional GuardedJSONStore adoption remains a later follow-up.
+**GREEN for durable activity restore.** Same reload boundary as identity/transcript: save → new store/controller → restore identity **and** rehydrate messages plus toolCalls, toolResults, commands/output/results, fileChanges, reasoningBlocks, and usage. Status merge follows live reducer id semantics. `startSession` still clears prior transcript; `close` removes it. Backend-history reconciliation with Claude/Hermes remote history remains deferred. Optional GuardedJSONStore adoption remains a later follow-up. CI green: [37336556378](https://github.com/dsmithnh3/scarf/actions/runs/37336556378).
 
 Hermes remains the default route. Claude permission capability stays unset.
 
