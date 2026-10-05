@@ -10,10 +10,21 @@ struct ClaudeControlRequest: Sendable, Equatable {
     }
 }
 
+struct ClaudePermissionControlRequest: Sendable, Equatable {
+    let requestID: String
+    let toolName: String
+    let inputJSON: String
+}
+
 struct ClaudeControlResponse: Sendable, Equatable {
     let requestID: String
     let isSuccess: Bool
     let errorMessage: String?
+}
+
+enum ClaudePermissionDecision: Sendable, Equatable {
+    case allow(updatedInputJSON: String? = nil)
+    case deny(message: String)
 }
 
 enum ClaudeControlProtocol {
@@ -31,18 +42,83 @@ enum ClaudeControlProtocol {
             "request_id": request.requestID,
             "request": body,
         ]
-        let data = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
-        guard let json = String(data: data, encoding: .utf8) else {
+        return try jsonString(envelope)
+    }
+
+    /// Decode a host-facing Claude Code control request.
+    ///
+    /// Only `can_use_tool` is surfaced here. Unknown control request subtypes
+    /// remain available to future protocol handlers without being mistaken for
+    /// permission prompts.
+    static func decodePermissionRequest(_ line: String) throws -> ClaudePermissionControlRequest? {
+        guard let json = try decodeJSONObject(line) else {
+            throw ClaudeControlProtocolError.invalidJSON
+        }
+        guard json["type"] as? String == "control_request" else { return nil }
+        guard let requestID = json["request_id"] as? String,
+              let request = json["request"] as? [String: Any],
+              let subtype = request["subtype"] as? String
+        else {
+            throw ClaudeControlProtocolError.invalidControlRequest
+        }
+        guard subtype == "can_use_tool" else { return nil }
+        guard let toolName = request["tool_name"] as? String else {
+            throw ClaudeControlProtocolError.invalidPermissionRequest
+        }
+
+        let input = request["input"] ?? [:]
+        guard JSONSerialization.isValidJSONObject(input) else {
+            throw ClaudeControlProtocolError.invalidPermissionRequest
+        }
+        let inputData = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
+        guard let inputJSON = String(data: inputData, encoding: .utf8) else {
             throw ClaudeControlProtocolError.invalidUTF8
         }
-        return json
+        return ClaudePermissionControlRequest(
+            requestID: requestID,
+            toolName: toolName,
+            inputJSON: inputJSON
+        )
+    }
+
+    /// Encode the response shape Claude Code expects for a `can_use_tool`
+    /// request. This exists before the capability is advertised so Scarf can
+    /// validate the wire contract without exposing a brittle approval UI.
+    static func encodePermissionResponse(
+        requestID: String,
+        decision: ClaudePermissionDecision
+    ) throws -> String {
+        let decisionBody: [String: Any]
+        switch decision {
+        case .allow(let updatedInputJSON):
+            var response: [String: Any] = ["behavior": "allow"]
+            if let updatedInputJSON {
+                guard let inputObject = try decodeJSONFragment(updatedInputJSON) else {
+                    throw ClaudeControlProtocolError.invalidPermissionInput
+                }
+                response["updatedInput"] = inputObject
+            }
+            decisionBody = response
+        case .deny(let message):
+            decisionBody = [
+                "behavior": "deny",
+                "message": message,
+            ]
+        }
+
+        let envelope: [String: Any] = [
+            "type": "control_response",
+            "response": [
+                "subtype": "success",
+                "request_id": requestID,
+                "response": decisionBody,
+            ],
+        ]
+        return try jsonString(envelope)
     }
 
     static func decodeResponse(_ line: String) throws -> ClaudeControlResponse? {
-        guard let data = line.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data),
-              let json = object as? [String: Any]
-        else {
+        guard let json = try decodeJSONObject(line) else {
             throw ClaudeControlProtocolError.invalidJSON
         }
         guard json["type"] as? String == "control_response" else { return nil }
@@ -58,10 +134,32 @@ enum ClaudeControlProtocol {
             errorMessage: response["error"] as? String
         )
     }
+
+    private static func jsonString(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw ClaudeControlProtocolError.invalidUTF8
+        }
+        return json
+    }
+
+    private static func decodeJSONObject(_ line: String) throws -> [String: Any]? {
+        guard let data = line.data(using: .utf8) else { return nil }
+        let object = try JSONSerialization.jsonObject(with: data)
+        return object as? [String: Any]
+    }
+
+    private static func decodeJSONFragment(_ raw: String) throws -> Any? {
+        guard let data = raw.data(using: .utf8) else { return nil }
+        return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+    }
 }
 
 enum ClaudeControlProtocolError: Error, Equatable {
     case invalidUTF8
     case invalidJSON
+    case invalidControlRequest
     case invalidControlResponse
+    case invalidPermissionRequest
+    case invalidPermissionInput
 }
