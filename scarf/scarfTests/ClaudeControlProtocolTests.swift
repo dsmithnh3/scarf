@@ -20,7 +20,8 @@ struct ClaudeControlProtocolTests {
     @Test("success control response is correlated by request id")
     func successDecoding() throws {
         let line = #"{"type":"control_response","response":{"subtype":"success","request_id":"req_1","response":{"still_queued":[]}}}"#
-        let response = try #require(try ClaudeControlProtocol.decodeResponse(line))
+        let decoded = try ClaudeControlProtocol.decodeResponse(line)
+        let response = try #require(decoded)
         #expect(response.requestID == "req_1")
         #expect(response.isSuccess)
         #expect(response.errorMessage == nil)
@@ -29,7 +30,8 @@ struct ClaudeControlProtocolTests {
     @Test("error control response preserves the error message")
     func errorDecoding() throws {
         let line = #"{"type":"control_response","response":{"subtype":"error","request_id":"req_2","error":"not supported"}}"#
-        let response = try #require(try ClaudeControlProtocol.decodeResponse(line))
+        let decoded = try ClaudeControlProtocol.decodeResponse(line)
+        let response = try #require(decoded)
         #expect(response.requestID == "req_2")
         #expect(!response.isSuccess)
         #expect(response.errorMessage == "not supported")
