@@ -97,10 +97,30 @@ struct HermesEventMapperTests {
         ])
     }
 
+    @Test("available_commands_update maps into AgentEvent slash descriptors")
+    func availableCommandsMapToAgentEvent() {
+        let mapped = HermesEventMapper.map(.availableCommands(sessionId: "s", commands: [
+            ["name": "/help", "description": "List available commands"],
+            ["name": "steer", "description": "Inject guidance", "input": ["hint": "<guidance>"]],
+        ]))
+
+        #expect(mapped.count == 1)
+        guard let first = mapped.first,
+              case .availableCommandsUpdated(let commands) = first else {
+            Issue.record("expected availableCommandsUpdated")
+            return
+        }
+        #expect(commands.map(\.name) == ["help", "steer"])
+        #expect(commands[1].argumentHint == "<guidance>")
+        #expect(commands.allSatisfy { $0.source == .hermes })
+    }
+
     @Test("non-shared Hermes events remain backend-specific and are ignored by generic mapper")
     func ignoresBackendSpecificEvents() {
         #expect(HermesEventMapper.map(.userMessageChunk(sessionId: "s", text: "history")) == [])
-        #expect(HermesEventMapper.map(.availableCommands(sessionId: "s", commands: [])) == [])
+        #expect(HermesEventMapper.map(.availableCommands(sessionId: "s", commands: [])) == [
+            .availableCommandsUpdated([])
+        ])
         #expect(HermesEventMapper.map(.unknown(sessionId: "s", type: "future")) == [])
     }
 

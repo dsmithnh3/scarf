@@ -188,4 +188,20 @@ struct AgentConversationStateTests {
         #expect(!state.isRunning)
         #expect(state.permissionRequest == nil)
     }
+
+    @Test("availableCommandsUpdated stores live ACP descriptors and clears on sessionClosed")
+    func availableCommandsUpdatedStoresLiveDescriptors() {
+        var state = AgentConversationState()
+        let commands = AgentSlashCommandACPDiscovery.descriptors(fromACPCommands: [
+            ["name": "help", "description": "List commands"],
+            ["name": "version", "description": "Show version"],
+        ])
+
+        state.apply(.availableCommandsUpdated(commands))
+        #expect(state.discoveredSlashCommands.map(\.name) == ["help", "version"])
+        #expect(state.discoveredSlashCommands[0].description == "List commands")
+
+        state.apply(.sessionClosed)
+        #expect(state.discoveredSlashCommands.isEmpty)
+    }
 }

@@ -25,6 +25,9 @@ public struct AgentConversationState: Equatable, Sendable {
     public private(set) var usage: AgentUsage?
     public private(set) var error: AgentError?
     public private(set) var stopReason: String?
+    /// Live slash commands from the active backend (Hermes ACP discovery).
+    /// Cleared on `sessionClosed`. Not part of durable transcript fidelity.
+    public private(set) var discoveredSlashCommands: [AgentSlashCommandDescriptor] = []
 
     public private(set) var isRunning = false
     public private(set) var isClosed = false
@@ -138,6 +141,9 @@ public struct AgentConversationState: Equatable, Sendable {
         case .usageUpdated(let usage):
             self.usage = usage
 
+        case .availableCommandsUpdated(let commands):
+            discoveredSlashCommands = commands
+
         case .turnCompleted(let stopReason):
             commitReasoningDraft()
             commitAssistantDraft()
@@ -149,6 +155,7 @@ public struct AgentConversationState: Equatable, Sendable {
             commitReasoningDraft()
             commitAssistantDraft()
             permissionRequest = nil
+            discoveredSlashCommands = []
             isRunning = false
             isClosed = true
 

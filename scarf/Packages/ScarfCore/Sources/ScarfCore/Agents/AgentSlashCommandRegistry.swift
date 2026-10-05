@@ -139,4 +139,44 @@ public struct AgentSlashCommandRegistry: Sendable, Equatable {
             )
         }
     }
+
+    /// Merge live Hermes ACP advertisements into this registry.
+    ///
+    /// Precedence mirrors Hermes chat: live ACP names supersede the static
+    /// Hermes fallback roster, while Scarf-local commands stay first-wins.
+    /// Static Hermes entries whose names are absent from `live` remain so
+    /// resumed sessions without a re-emitted `available_commands_update` keep
+    /// discoverable affordances (same reason as
+    /// `RichChatViewModel.alwaysAvailableCommands`).
+    public func mergingLiveHermesACPCommands(
+        _ live: [AgentSlashCommandDescriptor]
+    ) -> AgentSlashCommandRegistry {
+        let scarfLocal = commands.filter { $0.source == .scarfLocal }
+        let staticHermes = commands.filter { $0.source == .hermes }
+        let other = commands.filter { $0.source != .scarfLocal && $0.source != .hermes }
+
+        let liveNames = Set(live.map { $0.name.lowercased() })
+        let remainingStatic = staticHermes.filter {
+            !liveNames.contains($0.name.lowercased())
+        }
+
+        // Normalize live rows to Hermes scope even if a caller forgot.
+        let normalizedLive = live.map { command in
+            AgentSlashCommandDescriptor(
+                name: command.name,
+                description: command.description,
+                aliases: command.aliases,
+                backendScope: .backends([.hermes]),
+                requiredCapabilities: command.requiredCapabilities,
+                argumentHint: command.argumentHint,
+                execution: command.execution,
+                category: command.category,
+                source: .hermes
+            )
+        }
+
+        return AgentSlashCommandRegistry(
+            commands: scarfLocal + normalizedLive + remainingStatic + other
+        )
+    }
 }

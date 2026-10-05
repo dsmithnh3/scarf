@@ -17,6 +17,9 @@ public enum AgentEvent: Equatable, Sendable {
     case fileChanged(AgentFileChange)
     case permissionRequested(AgentPermissionRequest)
     case usageUpdated(AgentUsage)
+    /// Live slash commands advertised by a backend (Hermes ACP
+    /// `available_commands_update`). Empty clears prior discovery.
+    case availableCommandsUpdated([AgentSlashCommandDescriptor])
     case turnCompleted(stopReason: String?)
     case sessionClosed
     case error(AgentError)

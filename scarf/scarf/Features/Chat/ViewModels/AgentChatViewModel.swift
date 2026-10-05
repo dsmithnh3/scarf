@@ -14,7 +14,8 @@ final class AgentChatViewModel {
     private let controller: AgentConversationController
     private let backendID: AgentID
     private let workingDirectory: URL
-    private let slashHintPresenter: AgentSlashHintPresenter
+    private let baseSlashRegistry: AgentSlashCommandRegistry
+    private var slashHintPresenter: AgentSlashHintPresenter
 
     private(set) var state = AgentConversationState()
     private(set) var isStarted = false
@@ -45,10 +46,12 @@ final class AgentChatViewModel {
         self.controller = controller
         self.backendID = backendID
         self.workingDirectory = workingDirectory
-        self.slashHintPresenter = slashHintPresenter ?? AgentSlashHintPresenter(
+        let presenter = slashHintPresenter ?? AgentSlashHintPresenter(
             backendID: backendID,
             capabilities: AgentSlashHintPresenter.defaultCapabilities(for: backendID)
         )
+        self.baseSlashRegistry = presenter.registry
+        self.slashHintPresenter = presenter
         observeState()
         refreshSlashHints()
     }
@@ -130,12 +133,26 @@ final class AgentChatViewModel {
         slashHintPresentation = slashHintPresenter.presentation(for: draft)
     }
 
+    /// Rebuild the hint registry when Hermes ACP advertises live commands.
+    /// Empty discovery keeps the static Scarf + Hermes fallback catalogs.
+    private func applyDiscoveredSlashCommands(from snapshot: AgentConversationState) {
+        if snapshot.discoveredSlashCommands.isEmpty {
+            slashHintPresenter.registry = baseSlashRegistry
+        } else {
+            slashHintPresenter.registry = baseSlashRegistry.mergingLiveHermesACPCommands(
+                snapshot.discoveredSlashCommands
+            )
+        }
+        refreshSlashHints()
+    }
+
     private func observeState() {
         let stream = controller.stateUpdates
         stateTask = Task { [weak self] in
             for await snapshot in stream {
                 guard !Task.isCancelled else { break }
                 self?.state = snapshot
+                self?.applyDiscoveredSlashCommands(from: snapshot)
             }
         }
     }

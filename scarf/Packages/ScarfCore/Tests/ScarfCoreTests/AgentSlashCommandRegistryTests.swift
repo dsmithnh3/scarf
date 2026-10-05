@@ -271,4 +271,67 @@ struct AgentSlashCommandRegistryTests {
         #expect(withArg?.insertionText == "/scarf-cron ")
         #expect(withArg?.argumentHint != nil)
     }
+
+    @Test("ACP discovery parses verified available_commands_update shape")
+    func acpDiscoveryParsesVerifiedPayloadShape() {
+        let parsed = AgentSlashCommandACPDiscovery.descriptors(fromACPCommands: [
+            ["name": "/help", "description": "List available commands"],
+            [
+                "name": "steer",
+                "description": "Inject guidance",
+                "input": ["hint": "<guidance>"],
+            ],
+            ["description": "missing name is skipped"],
+            ["name": "   ", "description": "blank name skipped"],
+            ["name": "version", "description": "Show Hermes version"],
+        ])
+
+        #expect(parsed.map(\.name) == ["help", "steer", "version"])
+        #expect(parsed[0].description == "List available commands")
+        #expect(parsed[0].argumentHint == nil)
+        #expect(parsed[0].source == .hermes)
+        #expect(parsed[0].backendScope == .backends([.hermes]))
+        #expect(parsed[0].execution == .forwardToBackend)
+        #expect(parsed[1].argumentHint == "<guidance>")
+        #expect(parsed.allSatisfy { $0.source == .hermes })
+    }
+
+    @Test("live Hermes ACP commands supersede static Hermes fallbacks and keep Scarf-local")
+    func liveHermesACPCommandsSupersedeStaticFallbacks() {
+        let base = AgentSlashCommandCatalogs.makeRegistry(hermesPreferCompressSpelling: true)
+        let live = AgentSlashCommandACPDiscovery.descriptors(fromACPCommands: [
+            ["name": "help", "description": "ACP help description"],
+            ["name": "version", "description": "ACP version description"],
+            ["name": "compress", "description": "ACP compress description"],
+        ])
+
+        let merged = base.mergingLiveHermesACPCommands(live)
+        let hermesCaps: AgentCapabilities = [
+            .streaming, .sessions, .resume, .mcp, .skills, .memory, .cron, .toolCalls,
+        ]
+        let hints = merged.hints(
+            matching: "",
+            backendID: .hermes,
+            capabilities: hermesCaps
+        )
+
+        #expect(hints.map(\.name).contains("scarf-help"))
+        #expect(hints.first { $0.name == "help" }?.description == "ACP help description")
+        #expect(hints.filter { $0.name == "help" }.count == 1)
+        #expect(hints.filter { $0.name == "version" }.count == 1)
+        #expect(hints.filter { $0.name == "compress" }.count == 1)
+        // Static Hermes names not in the live advertisement remain as fallback
+        // (ACP does not always re-emit after session/load).
+        #expect(hints.map(\.name).contains("title"))
+        #expect(hints.map(\.name).contains("steer"))
+        #expect(hints.map(\.name).contains("queue"))
+
+        let claudeHints = merged.hints(
+            matching: "",
+            backendID: .claudeCode,
+            capabilities: [.streaming, .sessions, .resume, .mcp, .toolCalls]
+        )
+        #expect(claudeHints.allSatisfy { $0.source == .scarfLocal })
+        #expect(!claudeHints.map(\.name).contains("help"))
+    }
 }

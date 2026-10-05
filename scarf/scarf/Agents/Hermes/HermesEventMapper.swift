@@ -65,8 +65,14 @@ enum HermesEventMapper {
                 isRecoverable: true
             ))]
 
+        case .availableCommands(_, let commands):
+            return [
+                .availableCommandsUpdated(
+                    AgentSlashCommandACPDiscovery.descriptors(fromACPCommands: commands)
+                )
+            ]
+
         case .userMessageChunk,
-             .availableCommands,
              .sessionInfoUpdate,
              .unknown:
             return []

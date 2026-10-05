@@ -75,12 +75,17 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 3 backend-aware slash command registry model (`319f8610`) — `AgentSlashCommandDescriptor` + `AgentSlashCommandRegistry` in ScarfCore with backend scope, capability gating, first-wins dedupe, and name/alias prefix matching. Separate from `HermesSlashCommand` / transcript `AgentCommand`. No CLUI UI. Claude structured history remains blocked (no verified protocol source). CI run [37352437757](https://github.com/dsmithnh3/scarf/actions/runs/37352437757) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 3 Scarf-native command hints + catalog sources (`0a986fa2`) — `AgentSlashCommandCatalogs` (Scarf-local builtins, Hermes ACP static roster, empty Claude stub) + `AgentSlashCommandHint` / `hints(matching:backendID:capabilities:)`. No CLUI UI. Claude permissions stay unadvertised; Claude catalog empty until slash forwarding/discovery is verified. CI run [37356365121](https://github.com/dsmithnh3/scarf/actions/runs/37356365121) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 3 Scarf-native slash hint UI (`a8b14173`) — `AgentSlashHintPresenter` + `AgentChatViewModel` draft/hints wiring + `AgentSlashHintMenu` in the multi-agent composer (`AgentProjectChatView`). ScarfDesign tokens only (no CLUI/Opal). Hermes shows Scarf-local + ACP roster; Claude shows Scarf-local only (empty Claude catalog). CI run [37358088673](https://github.com/dsmithnh3/scarf/actions/runs/37358088673) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 3 live Hermes ACP command discovery into registry — `AgentSlashCommandACPDiscovery` parses verified `available_commands_update` payloads; `AgentSlashCommandRegistry.mergingLiveHermesACPCommands` supersedes static Hermes fallbacks while keeping Scarf-local; `AgentEvent.availableCommandsUpdated` + state store; `HermesEventMapper` no longer drops the event; `AgentChatViewModel` rebuilds hint registry from discovery. Claude discovery stays empty. CI pending after push.
 
 ## Current TDD milestone
 
+### Phase 3 — live Hermes ACP slash command discovery
+
+**IN PROGRESS / GREEN locally for verified ACP → registry wiring.** `AgentSlashCommandACPDiscovery` mirrors `RichChatViewModel.parseACPCommands` (name trim, description, `input.hint`). Live Hermes ACP names supersede the static Hermes roster; Scarf-local stays first-wins; static Hermes names absent from the advertisement remain as resume fallbacks. `HermesEventMapper` emits `availableCommandsUpdated`; conversation state stores discovery (cleared on close); multi-agent composer hints rebuild from the merged registry. No Claude invention; permissions stay unadvertised. Tests: `AgentSlashCommandRegistryTests`, `AgentConversationStateTests`, `HermesEventMapperTests`.
+
 ### Phase 3 — Scarf-native slash hint UI
 
-**GREEN for multi-agent composer hint menu.** ViewModel-facing `AgentSlashHintPresenter` drives `AgentSlashCommandRegistry.hints` from composer draft text (same `/token` visibility rules as Hermes chat). `AgentChatViewModel` owns draft + presentation; `AgentSlashHintMenu` renders ScarfDesign rows above the multi-agent composer. Claude remains empty of Claude-specific commands; permissions stay unadvertised. Tests: `AgentSlashHintPresenterTests`. Optional live ACP / Claude discovery still deferred. CI green: [37358088673](https://github.com/dsmithnh3/scarf/actions/runs/37358088673).
+**GREEN for multi-agent composer hint menu.** ViewModel-facing `AgentSlashHintPresenter` drives `AgentSlashCommandRegistry.hints` from composer draft text (same `/token` visibility rules as Hermes chat). `AgentChatViewModel` owns draft + presentation; `AgentSlashHintMenu` renders ScarfDesign rows above the multi-agent composer. Claude remains empty of Claude-specific commands; permissions stay unadvertised. Tests: `AgentSlashHintPresenterTests`. Live ACP discovery lands in the slice above. CI green: [37358088673](https://github.com/dsmithnh3/scarf/actions/runs/37358088673).
 
 ### Phase 3 — Scarf-native command hints + catalog sources
 
@@ -159,9 +164,9 @@ Claude process cleanup is locked without a production change. Conversation close
 ## Next lifecycle milestones
 
 1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
-2. Optional live ACP `available_commands_update` / Claude discovery once verified (slash hint UI landed on static catalogs).
-3. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
-4. Keep the CLUI adoption order unchanged: Claude history stays blocked; proceed with skills/MCP / permissions only behind truthful capabilities; Codex remains later.
+2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
+3. Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.
+4. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -294,7 +299,8 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 ### Phase 2 — adopt high-value CLUI patterns
 
 - Compare/port provider normalization improvements.
-- Build backend-aware slash command registry + Scarf-native command hints + composer hint UI (`AgentSlashHintPresenter` / `AgentSlashHintMenu`).
+- [x] Build backend-aware slash command registry + Scarf-native command hints + composer hint UI (`AgentSlashHintPresenter` / `AgentSlashHintMenu`).
+- [x] Live Hermes ACP `available_commands_update` → registry (`AgentSlashCommandACPDiscovery` / `mergingLiveHermesACPCommands`).
 - Add unified skills/plugins/MCP catalog abstractions while preserving Hermes.
 - Introduce generic permission state machine with truthful capability gating.
 - Improve session persistence/tool-result/usage merge semantics.
@@ -302,6 +308,7 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 ### Phase 3 — Scarf-native setup and UX
 
 - Backend-aware slash command registry + Scarf-native hint query + multi-agent composer menu (`AgentSlashHintMenu`; no CLUI transplant).
+- Live Hermes ACP command discovery into the registry (static Hermes fallback retained).
 - Agent/provider settings for Hermes and Claude Code.
 - Project-level backend/model preference.
 - Scarf-native backend indicator/switcher.
