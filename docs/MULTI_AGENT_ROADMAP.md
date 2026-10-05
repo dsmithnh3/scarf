@@ -86,7 +86,7 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ### Phase 2 — GuardedJSONStore for identity + transcript sidecars
 
-**GREEN for transport-safe RMW on Phase 2 persistence sidecars.** Both stores adopt `GuardedSidecarStore` / `GuardedJSONStore` with `damagePolicy = .refuseForever` (resume identity and durable transcripts must not silently rebuild from empty). Healthy save/load/remove and controller restore paths stay intact; corrupt JSON refuses overwrite and preserves bytes; overwrite refreshes `.bak`. Single store per file (no parallel writer). Hermes remains default. Claude `.permissions` stays unadvertised.
+**GREEN for transport-safe RMW on Phase 2 persistence sidecars.** Both stores adopt `GuardedSidecarStore` / `GuardedJSONStore` with `damagePolicy = .refuseForever` (resume identity and durable transcripts must not silently rebuild from empty). Healthy save/load/remove and controller restore paths stay intact; corrupt JSON refuses overwrite and preserves bytes; overwrite refreshes `.bak`. Single store per file (no parallel writer). Hermes remains default. Claude `.permissions` stays unadvertised. Commit `ee56c946`. CI green (all 4 gates including Claude Process Tests): [37382269610](https://github.com/dsmithnh3/scarf/actions/runs/37382269610).
 
 ### Phase 4 — Claude permissions still blocked
 
