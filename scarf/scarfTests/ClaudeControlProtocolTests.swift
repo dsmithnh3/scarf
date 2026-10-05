@@ -48,4 +48,54 @@ struct ClaudeControlProtocolTests {
         #expect(first.hasPrefix("scarf_req_"))
         #expect(second.hasPrefix("scarf_req_"))
     }
+
+    @Test("can_use_tool control request is decoded for future host approval UI")
+    func permissionRequestDecoding() throws {
+        let line = #"{"type":"control_request","request_id":"req_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"/tmp/a.txt","content":"hello"}}}"#
+        let request = try #require(ClaudeControlProtocol.decodePermissionRequest(line))
+        #expect(request.requestID == "req_perm")
+        #expect(request.toolName == "Write")
+        #expect(request.inputJSON.contains("file_path"))
+        #expect(request.inputJSON.contains("/tmp/a.txt"))
+    }
+
+    @Test("other control requests are not treated as permission prompts")
+    func ignoresOtherControlRequests() throws {
+        let line = #"{"type":"control_request","request_id":"req_usage","request":{"subtype":"get_context_usage"}}"#
+        #expect(try ClaudeControlProtocol.decodePermissionRequest(line) == nil)
+    }
+
+    @Test("permission allow response uses Claude control response envelope")
+    func permissionAllowEncoding() throws {
+        let line = try ClaudeControlProtocol.encodePermissionResponse(
+            requestID: "req_allow",
+            decision: .allow(updatedInputJSON: #"{"file_path":"/tmp/b.txt"}"#)
+        )
+        let data = try #require(line.data(using: .utf8))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["type"] as? String == "control_response")
+
+        let outer = try #require(json["response"] as? [String: Any])
+        #expect(outer["request_id"] as? String == "req_allow")
+        #expect(outer["subtype"] as? String == "success")
+
+        let response = try #require(outer["response"] as? [String: Any])
+        #expect(response["behavior"] as? String == "allow")
+        let updatedInput = try #require(response["updatedInput"] as? [String: Any])
+        #expect(updatedInput["file_path"] as? String == "/tmp/b.txt")
+    }
+
+    @Test("permission deny response includes user-facing reason")
+    func permissionDenyEncoding() throws {
+        let line = try ClaudeControlProtocol.encodePermissionResponse(
+            requestID: "req_deny",
+            decision: .deny(message: "Not approved")
+        )
+        let data = try #require(line.data(using: .utf8))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let outer = try #require(json["response"] as? [String: Any])
+        let response = try #require(outer["response"] as? [String: Any])
+        #expect(response["behavior"] as? String == "deny")
+        #expect(response["message"] as? String == "Not approved")
+    }
 }
