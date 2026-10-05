@@ -3,12 +3,11 @@ import os
 import ScarfCore
 
 /// Creates a Scarf-standard project from scratch — a minimal directory
-/// tree with a placeholder `dashboard.json` + a stub `AGENTS.md` (just
-/// the Scarf-managed marker block) — and registers it. The
-/// counterpart to `ProjectTemplateInstaller`: that one synthesizes a
-/// project from a `.scarftemplate` plan; this one synthesizes a bare
-/// shell that the agent fills in conversationally via the
-/// `scarf-template-author` skill.
+/// tree with a placeholder `dashboard.json` + a stub AGENTS.md when the
+/// target host uses the managed-block delivery path — and registers it.
+/// The counterpart to `ProjectTemplateInstaller`: that one synthesizes a
+/// project from a `.scarftemplate` plan; this one synthesizes a bare shell
+/// that the selected agent fills in conversationally.
 ///
 /// **Why this exists.** `AddProjectSheet` registers an existing
 /// directory but doesn't create one; `ProjectTemplateInstaller`
@@ -20,7 +19,7 @@ import ScarfCore
 /// <parent>/<slug>/
 /// ├── .scarf/
 /// │   └── dashboard.json    # placeholder — single text widget
-/// └── AGENTS.md             # marker block only; refresh() populates it
+/// └── AGENTS.md             # marker block only on managed-block hosts
 /// ```
 ///
 /// No `manifest.json` — scratch projects don't have a config schema,
@@ -41,11 +40,15 @@ struct ProjectScaffolder: Sendable {
     /// On any failure after the project dir is created, deletes the
     /// dir and rethrows so the user isn't left with a half-created
     /// project that doesn't show in the sidebar.
+    ///
+    /// `preferredAgentID` defaults to Hermes so every existing call site and
+    /// every project created before multi-agent support keeps its behavior.
     nonisolated func scaffold(
         name: String,
         slug: String,
         parentDir: String,
-        description: String?
+        description: String?,
+        preferredAgentID: AgentID = .hermes
     ) throws -> ProjectEntry {
         let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedSlug = slug.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -93,7 +96,8 @@ struct ProjectScaffolder: Sendable {
             // 3. Write placeholder dashboard.json.
             let dashboardData = try Self.makePlaceholderDashboard(
                 name: cleanedName,
-                description: cleanedDescription
+                description: cleanedDescription,
+                preferredAgentID: preferredAgentID
             )
             // UNGUARDED-WRITE(C): first write into a freshly created, collision-checked project dir.
             try transport.unguardedWriteFile(
@@ -122,11 +126,13 @@ struct ProjectScaffolder: Sendable {
             //    ScarfProject record. `ProjectStore.save` writes the
             //    canonical `.scarf/project.json` AND indexes the project
             //    into the registry carrying the UUID — replacing the old
-            //    manual registry append. A scratch project starts with
-            //    no bindings beyond its single host materialization.
+            //    manual registry append. The preferred backend is stamped
+            //    into this same transactional record so a failed preference
+            //    write cannot leave a successfully scaffolded project routed
+            //    to the wrong agent.
             let projectID = UUID()
             let entry = ProjectEntry(name: cleanedName, path: projectDir, uuid: projectID)
-            let scarfProject = ScarfProject(
+            var scarfProject = ScarfProject(
                 id: projectID,
                 name: cleanedName,
                 rootPath: projectDir,
@@ -138,13 +144,13 @@ struct ProjectScaffolder: Sendable {
                     )
                 ]
             )
+            scarfProject.preferredAgentID = preferredAgentID
             try ProjectStore(context: context).save(scarfProject)
 
             // 6. Populate the marker block with project identity.
-            // Non-fatal — the chat handoff calls refresh() again
-            // anyway via startACPSession's project-prep step. Logging
-            // the failure here is enough. `refresh` now renders from the
-            // ScarfProject record written in step 5.
+            // Non-fatal — the Hermes chat handoff calls refresh() again
+            // via its project-prep step. Logging the failure here is enough.
+            // `refresh` renders from the ScarfProject record written in step 5.
             do {
                 try ProjectAgentContextService(context: context).sync(for: entry, capabilities: capabilities)
             } catch {
@@ -228,17 +234,30 @@ struct ProjectScaffolder: Sendable {
 
     nonisolated static func makePlaceholderDashboard(
         name: String,
-        description: String?
+        description: String?,
+        preferredAgentID: AgentID = .hermes
     ) throws -> Data {
-        let placeholderWidget = DashboardWidget(
-            type: "text",
-            title: "Configure this project",
-            content: """
+        let setupText: String
+        if preferredAgentID == .hermes {
+            setupText = """
             This project was just scaffolded by Scarf. \
             Chat with the agent to add widgets, schedule jobs, and write \
             instructions for future sessions. The `scarf-template-author` \
             skill knows the project standard end-to-end.
-            """,
+            """
+        } else {
+            setupText = """
+            This project was just scaffolded by Scarf. \
+            Chat with the configured agent to add widgets, schedule jobs, and \
+            write instructions for future sessions. The project record in \
+            `.scarf/project.json` identifies the selected agent backend.
+            """
+        }
+
+        let placeholderWidget = DashboardWidget(
+            type: "text",
+            title: "Configure this project",
+            content: setupText,
             format: "markdown"
         )
         let section = DashboardSection(
