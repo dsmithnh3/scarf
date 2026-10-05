@@ -178,6 +178,35 @@ struct AgentConversationControllerTests {
         #expect((await controller.stateSnapshot()).session == second)
     }
 
+    @Test("rapid session replacements close each outgoing session")
+    func rapidReplacementsCloseOutgoingSessions() async throws {
+        let coordinator = AgentCoordinator()
+        let backend = RecordingBackend()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+
+        let first = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+        let second = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+        let third = try await controller.startSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration()
+        )
+
+        #expect(first.id == "session-1")
+        #expect(second.id == "session-2")
+        #expect(third.id == "session-3")
+        #expect(await backend.closed() == ["session-1", "session-2"])
+        let state = await controller.stateSnapshot()
+        #expect(state.session == third)
+        #expect(!state.isClosed)
+    }
+
     @Test("late events from a replaced session do not modify the new session")
     func replacementIgnoresLatePreviousSessionEvents() async throws {
         let coordinator = AgentCoordinator()
