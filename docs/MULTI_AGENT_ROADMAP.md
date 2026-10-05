@@ -67,12 +67,19 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 2 production wiring (`5d9d21ea`) — `AgentConversationController.makePersisting` + `startOrRestorePersistedSession` inject `AgentConversationIdentityStore` at the `HermesPathSet.agentConversationIdentities` path (`{home}/scarf/agent_conversation_identities.json`). `AgentRuntime.conversationController(for:)` uses project id as conversation key; `AgentChatViewModel.start()` prefers restore then create. GuardedJSONStore adoption remains an optional follow-up (store still uses atomic file writes; no parallel store). CI run [37332041624](https://github.com/dsmithnh3/scarf/actions/runs/37332041624) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 - Phase 2 transcript fidelity (first durable slice) (`f7edf853`) — `AgentConversationTranscript` + file-backed `AgentConversationTranscriptStore` persist `conversationID → (messages, toolResults, usage)`. Controller saves after send/event reduction, clears on start/close, and `restorePersistedSession()` rehydrates into `AgentConversationState` after identity resume. Production path: `HermesPathSet.agentConversationTranscripts` / `makePersisting`. Live drafts/permissions/toolCalls remain reducer-only. CI run [37334461764](https://github.com/dsmithnh3/scarf/actions/runs/37334461764) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
 - Phase 2 deeper resume fidelity (activity fields) (`2defeb07`) — extend the same `AgentConversationTranscript` snapshot with `toolCalls`, `commands` / `commandOutput` / `commandResults`, `fileChanges`, and `reasoningBlocks`. `restoreDurableTranscript` rehydrates those fields and aligns tool/command status from matching result ids. Legacy first-slice JSON still decodes (missing activity keys → empty). Drafts/permissions remain reducer-only. Backend-history reconciliation and GuardedJSONStore remain deferred. CI run [37336556378](https://github.com/dsmithnh3/scarf/actions/runs/37336556378) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests. Hermes remains default; Claude permissions stay unadvertised.
+- Phase 2 backend-history reconciliation (smallest contract) — pure `AgentConversationTranscript.reconciling(withBackendHistory:)` plus `restorePersistedSession(backendHistory:)`. Empty backend prefers Scarf (messages + activity); empty Scarf messages adopt backend; both non-empty merge by `AgentMessage.id` (Scarf wins collisions, backend-only ids append, Scarf activity retained). Hermes/Claude still do not return structured history into the controller; RichChatViewModel state.db stays separate. Open decision: content/role matching when backends use non-Scarf UUID ids. GuardedJSONStore remains deferred.
 
 ## Current TDD milestone
 
+### Phase 2 — backend-history reconciliation (smallest contract)
+
+**GREEN for the Scarf↔backend message reconcile contract.** Callers may pass optional backend history into `restorePersistedSession(backendHistory:)`; default `[]` preserves prior restore behavior. Does not fetch Hermes ACP replay or Claude stream history yet. Cross-source id mapping (Hermes state.db / ACP replay without Scarf UUIDs) remains an open product decision. Optional GuardedJSONStore adoption remains a later follow-up.
+
+Hermes remains the default route. Claude permission capability stays unset.
+
 ### Phase 2 — deeper resume fidelity (activity fields)
 
-**GREEN for durable activity restore.** Same reload boundary as identity/transcript: save → new store/controller → restore identity **and** rehydrate messages plus toolCalls, toolResults, commands/output/results, fileChanges, reasoningBlocks, and usage. Status merge follows live reducer id semantics. `startSession` still clears prior transcript; `close` removes it. Backend-history reconciliation with Claude/Hermes remote history remains deferred. Optional GuardedJSONStore adoption remains a later follow-up. CI green: [37336556378](https://github.com/dsmithnh3/scarf/actions/runs/37336556378).
+**GREEN for durable activity restore.** Same reload boundary as identity/transcript: save → new store/controller → restore identity **and** rehydrate messages plus toolCalls, toolResults, commands/output/results, fileChanges, reasoningBlocks, and usage. Status merge follows live reducer id semantics. `startSession` still clears prior transcript; `close` removes it. Superseded for reconcile by the backend-history contract above; GuardedJSONStore remains deferred. CI green: [37336556378](https://github.com/dsmithnh3/scarf/actions/runs/37336556378).
 
 Hermes remains the default route. Claude permission capability stays unset.
 
@@ -110,9 +117,10 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. Backend-history reconciliation with Claude/Hermes remote history (beyond Scarf-owned durable snapshot).
-2. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
-3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
+1. Feed real Hermes ACP / Claude backend history into `restorePersistedSession(backendHistory:)` (today backends only resume identity; no structured `[AgentMessage]` return).
+2. Decide cross-source turn matching when backend ids are not Scarf UUIDs (Hermes state.db / ACP replay) — content/role merge deferred until then.
+3. Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.
+4. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -236,7 +244,7 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Wire production callers (`AgentRuntime` / `makePersisting` / `startOrRestorePersistedSession` → `HermesPathSet.agentConversationIdentities`).
 - [x] Session resume/history fidelity first durable slice (`AgentConversationTranscriptStore` — messages / toolResults / usage across reload).
 - [x] Deeper transcript activity fidelity (`toolCalls` / commands / fileChanges / reasoningBlocks on the same durable snapshot; result-id status merge).
-- [ ] Backend-history reconciliation with Claude/Hermes remote history.
+- [x] Backend-history reconciliation smallest contract (`reconciling(withBackendHistory:)` — empty-backend prefers Scarf; id merge; Scarf activity retained). Remaining: wire real backend history sources + cross-source id mapping.
 - [ ] Optional GuardedJSONStore adoption for the identity/transcript sidecars (single store per file; no parallel writer).
 
 ### Phase 2 — adopt high-value CLUI patterns

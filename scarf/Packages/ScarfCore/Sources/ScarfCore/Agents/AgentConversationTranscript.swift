@@ -72,6 +72,42 @@ public struct AgentConversationTranscript: Codable, Equatable, Sendable {
             || !reasoningBlocks.isEmpty
     }
 
+    /// Reconcile this Scarf-owned durable snapshot with optional backend-reported
+    /// history messages.
+    ///
+    /// Contract:
+    /// - Empty backend history → prefer Scarf unchanged (messages + activity).
+    /// - Empty Scarf messages + non-empty backend → adopt backend messages;
+    ///   keep Scarf activity fields.
+    /// - Both non-empty → merge by `AgentMessage.id`: Scarf order/content wins
+    ///   on collision; backend-only ids append after; Scarf activity always
+    ///   retained.
+    ///
+    /// Cross-source matching when backends use different id schemes than Scarf
+    /// UUIDs (Hermes state.db / ACP replay) is an open product decision and is
+    /// intentionally not invented here.
+    public func reconciling(withBackendHistory backendMessages: [AgentMessage]) -> AgentConversationTranscript {
+        if backendMessages.isEmpty {
+            return self
+        }
+
+        if messages.isEmpty {
+            var adopted = self
+            adopted.messages = backendMessages
+            return adopted
+        }
+
+        var merged = messages
+        let scarfIDs = Set(messages.map(\.id))
+        for message in backendMessages where !scarfIDs.contains(message.id) {
+            merged.append(message)
+        }
+
+        var result = self
+        result.messages = merged
+        return result
+    }
+
     private enum CodingKeys: String, CodingKey {
         case conversationID
         case messages

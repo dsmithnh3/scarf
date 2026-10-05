@@ -607,10 +607,15 @@ Each can be evaluated independently after multi-agent foundations are stable.
 - [x] Define persisted backend/session identity (`AgentConversationIdentity` / `AgentConversationIdentityStore`).
 - [x] Wire production callers to HermesPathSet identity path (`makePersisting` / `AgentRuntime` / `startOrRestorePersistedSession`).
 - [x] Persist/restore durable transcript slice (`AgentConversationTranscriptStore` — messages / toolResults / usage).
+- [x] Deeper activity fields on the same durable snapshot (`toolCalls` / commands / files / reasoning).
+- [x] Backend-history reconcile contract (`reconciling(withBackendHistory:)` — prefer Scarf when empty; merge by message id).
 - [ ] Port useful tool-result merge semantics/tests (beyond Scarf-owned snapshot restore).
 - [ ] Normalize usage accounting (beyond snapshot restore).
 - [x] Add restart/resume identity tests (`restorePersistedSession`).
 - [x] Add restart/resume transcript fidelity tests (`AgentConversationTranscriptFidelityTests`).
+- [x] Add backend-history reconciliation tests (`AgentConversationBackendHistoryReconciliationTests`).
+- [ ] Wire real Hermes ACP / Claude history into `backendHistory` (backends currently resume identity only).
+- [ ] Decide cross-source turn matching when backend ids ≠ Scarf UUIDs.
 - [ ] Define migration strategy for persisted session schema.
 
 ### Phase 3 — slash commands and extensions

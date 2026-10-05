@@ -157,15 +157,20 @@ public actor AgentConversationController {
     ///
     /// After resume, rehydrates any durable transcript snapshot so a relaunch
     /// restores messages/toolResults/usage without a second state system.
+    /// Optional `backendHistory` is reconciled against the Scarf transcript
+    /// (empty backend → prefer Scarf; id merge otherwise — see
+    /// ``AgentConversationTranscript/reconciling(withBackendHistory:)``).
     @discardableResult
-    public func restorePersistedSession() async throws -> AgentSession? {
+    public func restorePersistedSession(
+        backendHistory: [AgentMessage] = []
+    ) async throws -> AgentSession? {
         guard let conversationID,
               let identityStore,
               let identity = try identityStore.load(conversationID: conversationID) else {
             return nil
         }
         let session = try await resumeSession(identity.makeSession())
-        hydratePersistedTranscript()
+        hydratePersistedTranscript(backendHistory: backendHistory)
         return session
     }
 
@@ -389,12 +394,13 @@ public actor AgentConversationController {
         }
     }
 
-    private func hydratePersistedTranscript() {
+    private func hydratePersistedTranscript(backendHistory: [AgentMessage] = []) {
         guard let conversationID, let transcriptStore else { return }
         do {
-            guard let transcript = try transcriptStore.load(conversationID: conversationID) else {
-                return
-            }
+            let loaded = try transcriptStore.load(conversationID: conversationID)
+                ?? AgentConversationTranscript(conversationID: conversationID)
+            let transcript = loaded.reconciling(withBackendHistory: backendHistory)
+            guard transcript.hasDurableContent else { return }
             state.restoreDurableTranscript(
                 messages: transcript.messages,
                 toolResults: transcript.toolResults,
