@@ -1,4 +1,5 @@
 name: Multi-Agent Branch CI
+# Phase 3 extension catalog filter includes AgentExtension|AgentSlash.
 
 on:
   push:
