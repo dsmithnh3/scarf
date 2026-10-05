@@ -605,6 +605,7 @@ Each can be evaluated independently after multi-agent foundations are stable.
 
 - [ ] Compare CLUI session persistence with Scarf conversation state.
 - [x] Define persisted backend/session identity (`AgentConversationIdentity` / `AgentConversationIdentityStore`).
+- [x] Wire production callers to HermesPathSet identity path (`makePersisting` / `AgentRuntime` / `startOrRestorePersistedSession`).
 - [ ] Port useful tool-result merge semantics/tests.
 - [ ] Normalize usage accounting.
 - [x] Add restart/resume identity tests (`restorePersistedSession`).

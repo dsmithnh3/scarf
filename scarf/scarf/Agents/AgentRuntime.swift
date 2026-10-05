@@ -86,11 +86,19 @@ actor AgentRuntime {
     /// This is intentionally a factory rather than a global controller: each
     /// chat owns its own session lifecycle/state while sharing the context-bound
     /// coordinator and registered backend processes.
+    ///
+    /// Controllers are wired to ``AgentConversationIdentityStore`` at
+    /// `HermesPathSet.agentConversationIdentities` so start/resume persist and
+    /// relaunch can restore without inventing a second conversation state.
     func conversationController(for project: ScarfProject) async -> AgentConversationController? {
         await configureIfNeeded()
         guard await coordinator.backend(for: project.preferredAgentID) != nil else {
             return nil
         }
-        return AgentConversationController(coordinator: coordinator)
+        return AgentConversationController.makePersisting(
+            coordinator: coordinator,
+            conversationID: project.id.uuidString,
+            hermesHome: context.paths.home
+        )
     }
 }

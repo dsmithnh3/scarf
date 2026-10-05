@@ -64,12 +64,13 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - `2513c302` — Claude divergent system-init session ids are aligned to Scarf's runtime session id (`claudeReportedSessionID` metadata). Installation/resume not-installed paths and resume-of-active identity covered.
 - `9a15aaa1` — failed create/resume and unexpected Claude process exit surface through `AgentConversationState.error`. CI run [37327549215](https://github.com/dsmithnh3/scarf/actions/runs/37327549215) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests (12/12 suite cases).
 - Phase 2 persistence foundation (`67b3ac44`) — `AgentConversationIdentity` + file-backed `AgentConversationIdentityStore` persist `conversationID → (backendID, sessionID)`. `AgentConversationController` optionally wires a store: start/resume save, close removes, `restorePersistedSession()` reloads across a new store/controller instance. Not an extension of Hermes `SessionProjectMap`. Live transcript state stays in `AgentConversationState`. CI run [37329860714](https://github.com/dsmithnh3/scarf/actions/runs/37329860714) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
+- Phase 2 production wiring — `AgentConversationController.makePersisting` + `startOrRestorePersistedSession` inject `AgentConversationIdentityStore` at the `HermesPathSet.agentConversationIdentities` path (`{home}/scarf/agent_conversation_identities.json`). `AgentRuntime.conversationController(for:)` uses project id as conversation key; `AgentChatViewModel.start()` prefers restore then create. GuardedJSONStore adoption remains an optional follow-up (store still uses atomic file writes; no parallel store).
 
 ## Current TDD milestone
 
 ### Phase 2 — persist backend id + session id
 
-**GREEN for the identity persistence slice.** Temp-directory reload boundary proves save → new store instance → load. Controller start/resume persist; close clears; restore resumes the stored backend+session without a second conversation state system.
+**GREEN for identity persistence + production wiring.** Temp-directory reload boundary proves save → new store instance → load. Controller start/resume persist; close clears; restore resumes the stored backend+session without a second conversation state system. App bootstrap factory `makePersisting(hermesHome:)` writes to the HermesPathSet production location; `AgentRuntime` / `AgentChatViewModel` consume that seam.
 
 Hermes remains the default route. Claude permission capability stays unset.
 
@@ -95,8 +96,8 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. Wire production callers to `HermesPathSet.agentConversationIdentities` (GuardedJSONStore adoption optional follow-up).
-2. Session resume/history fidelity beyond identity (transcript merge, usage).
+1. Session resume/history fidelity beyond identity (transcript merge, tool-result/usage).
+2. Optional GuardedJSONStore adoption for `AgentConversationIdentityStore` (transport-safe RMW); keep a single store.
 3. Keep the CLUI adoption order unchanged: finish the Claude foundation before slash commands, skills/MCP, permissions, and Codex.
 
 ## macOS-CLUI-CC adoption analysis
@@ -218,7 +219,9 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 - [x] Capability contract audit. Claude permissions remain unimplemented and unadvertised (respond + cancelPermission).
 - [x] Process failure surfacing via existing `AgentConversationState.error` (failed create/resume + unexpected exit).
 - [x] Persist backend id + session id (`AgentConversationIdentityStore` + controller restore seam).
+- [x] Wire production callers (`AgentRuntime` / `makePersisting` / `startOrRestorePersistedSession` → `HermesPathSet.agentConversationIdentities`).
 - [ ] Session resume/history fidelity beyond identity (transcript / tool-result merge).
+- [ ] Optional GuardedJSONStore adoption for the identity sidecar (single store; no parallel writer).
 
 ### Phase 2 — adopt high-value CLUI patterns
 

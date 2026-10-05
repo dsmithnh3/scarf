@@ -232,3 +232,111 @@ struct AgentConversationControllerIdentityPersistenceTests {
         #expect(try reloaded.load(conversationID: "window-1") == nil)
     }
 }
+
+@Suite("Agent conversation identity production wiring")
+struct AgentConversationIdentityProductionWiringTests {
+    private actor RecordingBackend: AgentBackend {
+        nonisolated let id: AgentID
+        nonisolated let displayName: String
+        nonisolated let capabilities: AgentCapabilities = [.streaming, .sessions]
+        nonisolated let events: AsyncStream<AgentEvent>
+
+        private let continuation: AsyncStream<AgentEvent>.Continuation
+        private var resumedSessions: [AgentSession] = []
+        private var nextSessionNumber = 0
+
+        init(id: AgentID = .claudeCode, displayName: String = "Claude Code") {
+            self.id = id
+            self.displayName = displayName
+            var continuation: AsyncStream<AgentEvent>.Continuation!
+            self.events = AsyncStream { continuation = $0 }
+            self.continuation = continuation
+        }
+
+        nonisolated func installationStatus() async -> AgentInstallationStatus { .available(version: nil) }
+        nonisolated func models() async throws -> [AgentModel] { [] }
+
+        func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
+            nextSessionNumber += 1
+            return AgentSession(
+                id: "session-\(nextSessionNumber)",
+                backendID: id,
+                workingDirectory: configuration.workingDirectory
+            )
+        }
+
+        func resumeSession(_ session: AgentSession) async throws -> AgentSession {
+            resumedSessions.append(session)
+            return session
+        }
+
+        func send(_ message: AgentMessage, in session: AgentSession) async throws {}
+        func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws {}
+        func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws {}
+        func cancel(session: AgentSession) async {}
+        func close(session: AgentSession) async {}
+
+        func resumed() -> [AgentSession] { resumedSessions }
+    }
+
+    @Test("productionFileURL matches HermesPathSet.agentConversationIdentities layout")
+    func productionFileURLMatchesHermesPathSetLayout() {
+        let hermesHome = "/tmp/fake-hermes-home"
+        let url = AgentConversationIdentityStore.productionFileURL(hermesHome: hermesHome)
+        #expect(url.path == hermesHome + "/scarf/agent_conversation_identities.json")
+    }
+
+    @Test("makePersisting bootstrap writes and restores via HermesPathSet production location")
+    func makePersistingPersistsAndRestoresAtProductionPath() async throws {
+        let hermesHome = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scarf-prod-identity-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: hermesHome) }
+        try FileManager.default.createDirectory(at: hermesHome, withIntermediateDirectories: true)
+
+        let expectedURL = AgentConversationIdentityStore.productionFileURL(
+            hermesHome: hermesHome.path
+        )
+        #expect(expectedURL.path.hasSuffix("/scarf/agent_conversation_identities.json"))
+
+        let coordinator = AgentCoordinator()
+        let backend = RecordingBackend()
+        await coordinator.register(backend)
+
+        let conversationID = UUID().uuidString
+        let controller = AgentConversationController.makePersisting(
+            coordinator: coordinator,
+            conversationID: conversationID,
+            hermesHome: hermesHome.path
+        )
+        let cwd = URL(fileURLWithPath: "/tmp/project")
+        let started = try await controller.startOrRestorePersistedSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration(workingDirectory: cwd)
+        )
+
+        #expect(FileManager.default.fileExists(atPath: expectedURL.path))
+        let onDisk = try AgentConversationIdentityStore(fileURL: expectedURL)
+            .load(conversationID: conversationID)
+        let identity = try #require(onDisk)
+        #expect(identity.backendID == .claudeCode)
+        #expect(identity.sessionID == started.id)
+        #expect(identity.workingDirectoryPath == cwd.path)
+
+        // Relaunch seam: new controller from the same production factory
+        // restores the stored backend + session without a second state system.
+        let relaunched = AgentConversationController.makePersisting(
+            coordinator: coordinator,
+            conversationID: conversationID,
+            hermesHome: hermesHome.path
+        )
+        let restored = try await relaunched.startOrRestorePersistedSession(
+            backendID: .claudeCode,
+            configuration: AgentSessionConfiguration(workingDirectory: cwd)
+        )
+        // startOrRestore should resume, not mint a second session.
+        #expect(restored.id == started.id)
+        #expect(restored.backendID == .claudeCode)
+        let resumed = await backend.resumed()
+        #expect(resumed.map(\.id) == [started.id])
+    }
+}

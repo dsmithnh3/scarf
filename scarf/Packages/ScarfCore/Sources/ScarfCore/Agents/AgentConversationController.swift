@@ -49,6 +49,20 @@ public actor AgentConversationController {
         continuation.yield(state)
     }
 
+    /// App/bootstrap construction: persists identity at the Hermes-home
+    /// production path (`HermesPathSet.agentConversationIdentities`).
+    public static func makePersisting(
+        coordinator: AgentCoordinator,
+        conversationID: String,
+        hermesHome: String
+    ) -> AgentConversationController {
+        AgentConversationController(
+            coordinator: coordinator,
+            conversationID: conversationID,
+            identityStore: AgentConversationIdentityStore(hermesHome: hermesHome)
+        )
+    }
+
     deinit {
         eventTask?.cancel()
         stateContinuation.finish()
@@ -139,6 +153,21 @@ public actor AgentConversationController {
             return nil
         }
         return try await resumeSession(identity.makeSession())
+    }
+
+    /// Prefer restoring a stored identity; otherwise create a fresh session.
+    ///
+    /// This is the production start seam for app view models so persistence
+    /// logic stays on the controller rather than spreading through UI.
+    @discardableResult
+    public func startOrRestorePersistedSession(
+        backendID: AgentID,
+        configuration: AgentSessionConfiguration
+    ) async throws -> AgentSession {
+        if let restored = try await restorePersistedSession() {
+            return restored
+        }
+        return try await startSession(backendID: backendID, configuration: configuration)
     }
 
     public func send(_ content: String) async throws {

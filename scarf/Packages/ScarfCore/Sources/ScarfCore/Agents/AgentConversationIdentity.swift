@@ -54,8 +54,9 @@ public protocol AgentConversationIdentityPersisting: Sendable {
 
 /// JSON map of Scarf conversation id → backend/session identity.
 ///
-/// Callers choose the file URL. Production can point at
-/// `~/.hermes/scarf/agent_conversation_identities.json`; tests use a temp
+/// Callers choose the file URL. Production uses
+/// ``productionFileURL(hermesHome:)`` (aligned with
+/// `HermesPathSet.agentConversationIdentities`); tests inject a temp
 /// directory so a second store instance proves the reload boundary without
 /// coupling this slice to GuardedJSONStore/transport.
 public struct AgentConversationIdentityStore: AgentConversationIdentityPersisting, Sendable {
@@ -63,6 +64,17 @@ public struct AgentConversationIdentityStore: AgentConversationIdentityPersistin
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
+    }
+
+    /// Production sidecar under a Hermes home. Keep byte-identical to
+    /// `HermesPathSet.agentConversationIdentities` (`{home}/scarf/agent_conversation_identities.json`).
+    public static func productionFileURL(hermesHome: String) -> URL {
+        URL(fileURLWithPath: hermesHome + "/scarf/agent_conversation_identities.json")
+    }
+
+    /// Convenience for app/bootstrap wiring against a Hermes home directory.
+    public init(hermesHome: String) {
+        self.init(fileURL: Self.productionFileURL(hermesHome: hermesHome))
     }
 
     public func save(_ identity: AgentConversationIdentity) throws {

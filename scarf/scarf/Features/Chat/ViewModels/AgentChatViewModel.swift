@@ -42,7 +42,7 @@ final class AgentChatViewModel {
         startupError = nil
 
         do {
-            _ = try await controller.startSession(
+            _ = try await controller.startOrRestorePersistedSession(
                 backendID: backendID,
                 configuration: AgentSessionConfiguration(
                     workingDirectory: workingDirectory
