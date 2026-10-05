@@ -140,9 +140,6 @@ public struct ProjectMCPTools: Sendable {
                     "path": .string(recordPath),
                 ])
             } else {
-                // Reported, never repaired here: rewriting a record that
-                // exists but doesn't parse destroys the only copy of
-                // whatever the agent meant to say.
                 fields["record"] = .object([
                     "path": .string(recordPath),
                     "error": .string(
@@ -162,8 +159,6 @@ public struct ProjectMCPTools: Sendable {
             slashCommands.loadCommands(at: entry.path).map { .string($0.name) }
         )
 
-        // Same derivations `ProjectContextBlock.renderManagedBlock` uses for
-        // its "Kanban board" / "Cron jobs" prose — no parallel logic here.
         if let tenant = KanbanTenantReader(context: context).tenant(forProjectPath: entry.path) {
             fields["kanbanTenant"] = .string(tenant)
         }
@@ -190,11 +185,6 @@ public struct ProjectMCPTools: Sendable {
             )
         }
         let path = ProjectIdentity.normalizedPath(rawPath)
-        // An absurd root makes every containment check downstream vacuous —
-        // `PathGuard`, `WidgetPathResolver`, `MiniAppAssetResolver` all ask
-        // "is this inside the project?", and the answer is "yes" for the
-        // whole machine when the project IS the machine. Refused here, at
-        // the one place an agent can mint a root.
         if let refusal = ProjectRootPolicy.refusal(for: path, context: context) {
             return .failure(refusal.message)
         }
@@ -216,10 +206,6 @@ public struct ProjectMCPTools: Sendable {
                     + "The registry keys the sidebar on the display name, so names must be unique."
             )
         }
-        // Same folder, different spelling (`/Work/App` vs `/work/app` on a
-        // case-insensitive volume, a symlinked parent) is caught by file
-        // identity — local contexts only, where the disk we stat is the one
-        // the path is on.
         if let existing = loaded.registry.projects.first(where: {
             ProjectIdentity.normalizedPath($0.path) == path
                 || (!context.isRemote && ProjectIdentity.mayBeSameLocalItem($0.path, path))
@@ -231,30 +217,11 @@ public struct ProjectMCPTools: Sendable {
             )
         }
 
-        // The identity comes from `ProjectStore.derive`, which is where
-        // every other caller gets one: an id derived from (host, path)
-        // when nothing has asserted one, never a fresh `UUID()`.
         let project = store.derive(from: ProjectEntry(name: name, path: path))
 
-        // The re-assert that used to sit here is GONE. `derive` reads the
-        // manifest, config, lock, cron and mini-apps off disk — tens of
-        // milliseconds in which the registry can go lossy — and this
-        // re-checked against a fresh read to shrink that window, because
-        // `indexInRegistry` was salvage-BLIND. It no longer is: it and
-        // `saveRegistry` both refuse a lossy registry from inside, against
-        // the very read they write back, so re-checking here would only be
-        // a third read of the same file with no window closed.
         do {
-            // Writes `<path>/.scarf/project.json` AND upserts the registry
-            // row carrying the id — the two halves the skill's step 8 did
-            // by hand, in the order the app does them.
             try store.save(project)
         } catch {
-            // `save` writes the record FIRST and indexes second, so a
-            // failure here can still have left `project.json` on disk.
-            // Telling the agent "nothing happened" would send it to
-            // re-register a path the doctor is about to report as an
-            // orphaned record.
             let recordPath = ProjectStore.recordPath(forProjectPath: path)
             let partial = transport.fileExists(recordPath)
                 ? " The record at \(recordPath) WAS written; only the registry row is missing — "
@@ -284,10 +251,6 @@ public struct ProjectMCPTools: Sendable {
             return .failure(notFoundMessage(selector, in: loaded))
         }
 
-        // Accept the dashboard as an object (the natural shape) or as a
-        // JSON string (what a model reaching for a text field produces).
-        // Rejecting the string form would be pedantry with a retry loop
-        // attached.
         guard let raw = arguments["dashboard"] else {
             throw ArgumentError(message: "Missing required argument \"dashboard\".")
         }
@@ -306,10 +269,6 @@ public struct ProjectMCPTools: Sendable {
         }
 
         do {
-            // Validates by DECODING with the real `ProjectDashboard` types
-            // and the widget catalog, then writes atomically through the
-            // transport — one write, so the file watcher fires once and
-            // the open cockpit repaints exactly once.
             try dashboards.saveDashboard(rawJSON: bytes, for: entry)
         } catch let error as ProjectDashboardWriteError {
             return .failure(
@@ -341,11 +300,6 @@ public struct ProjectMCPTools: Sendable {
         let body = try requiredString(arguments, "body")
         let overwrite = try optionalBool(arguments, "overwrite") ?? false
 
-        // Validate BEFORE the path is built. `ProjectSlashCommandService`
-        // validates too, so nothing escapes either way — but building a
-        // path out of an unvalidated name and probing it means a name of
-        // "../../etc/passwd" decides where we stat, and leaves the tool
-        // one refactor away from deciding where we WRITE.
         if let reason = ProjectSlashCommand.validateName(name) {
             return .failure("\"name\" is not a usable command name: \(reason)")
         }
@@ -382,37 +336,8 @@ public struct ProjectMCPTools: Sendable {
 
     // MARK: - project_set_config
 
-    /// A project's `config.json` is a handful of typed fields; past this
-    /// it is not a config file we should decode on the agent's behalf.
     static let configMaxBytes = 1 * 1024 * 1024
 
-    /// Write one key into `<project>/.scarf/config.json` — the file
-    /// `ProjectConfigService` (Mac app target) and `TemplateConfigSheet`
-    /// read and write today. This tool does not depend on that service:
-    /// `ProjectConfigService` and `TemplateConfigSchema`/`Field` are
-    /// app-target-only types a package executable cannot link against.
-    /// What it DOES reuse is the actual Keychain code —
-    /// `ScarfCore.ProjectConfigKeychain` / `TemplateKeychainRef` /
-    /// `TemplateSlug`, lifted out of the app target specifically so this
-    /// tool and the app's Configuration UI mint and resolve the exact
-    /// same `com.scarf.template.<slug>` refs through the exact same
-    /// `SecItem*` calls — never a second, reimplemented keychain path.
-    ///
-    /// Secret-ness is decided by the CALLER (`secret: true`), cross-
-    /// checked against the project's cached `manifest.json` schema when
-    /// one exists (schema says secret → the call must say secret; schema
-    /// says non-secret → the call must not). A schema-less project (no
-    /// cached manifest, e.g. hand-registered) has no authority to check
-    /// against, so the caller's flag is trusted alone — same trust level
-    /// `project_register` already extends to a hand-supplied path.
-    ///
-    /// Whatever the flag says, a plaintext `keychain://` value is
-    /// refused outright: accepting one would let an agent hand-mint a
-    /// ref pointing at ANY service/account this process can read,
-    /// including another project's secret — the exact bypass
-    /// `TemplateKeychainRef.belongs(toProjectPath:)` exists to prevent
-    /// on the READ side. Minting only ever happens inside this tool via
-    /// `TemplateKeychainRef.make`.
     private func setConfig(_ arguments: [String: JSONValue]) throws -> Outcome {
         let selector = try requiredString(arguments, "project")
         let loaded = dashboards.loadRegistryDetailed()
@@ -431,10 +356,6 @@ public struct ProjectMCPTools: Sendable {
         }
         let requestedSecret = try optionalBool(arguments, "secret") ?? false
 
-        // Untrusted-input guard: a caller can never smuggle a keychain
-        // ref through the plaintext `value` field, secret or not — the
-        // only way a ref is ever written is by this tool minting one
-        // below.
         if case .string(let s) = rawValue, s.hasPrefix("keychain://") {
             return .failure(
                 "\"value\" may not be a keychain:// reference — refs are minted internally by "
@@ -442,11 +363,6 @@ public struct ProjectMCPTools: Sendable {
             )
         }
 
-        // Cross-check against the cached manifest schema when one
-        // exists. `manifest.json` is read as raw JSON here (rather than
-        // through `ProjectTemplateManifest`, which is app-target-only)
-        // to look up whether `key` is a declared field and, if so,
-        // whether the author typed it `secret`.
         let manifestPath = entry.path + "/.scarf/manifest.json"
         var templateID: String?
         var schemaFieldIsSecret: Bool?
@@ -482,21 +398,6 @@ public struct ProjectMCPTools: Sendable {
             )
         }
 
-        // GUARDED read-modify-write (P8 DI-H3 / SEC-M6 write half).
-        //
-        // This used to be `fileExists` + `try? read` + `try? decode`, then a
-        // fresh four-key object written over the top. A read that failed on
-        // a file that IS there rebuilt `config.json` from nothing — every
-        // other field, including every other `keychain://` reference, was
-        // orphaned in the Keychain with no pointer left to it — and even on
-        // the happy path every top-level key Scarf doesn't know about was
-        // dropped. Now: one proof-based inspection (stat-confirm + retried
-        // read) that REFUSES the write when the file is provably there and
-        // unreadable, quarantines bytes that won't decode, preserves the
-        // whole object graph, and leaves a one-deep `.bak`.
-        //
-        // Inspected BEFORE the Keychain write below, so a refusal doesn't
-        // leave a secret in the Keychain that nothing references.
         let configPath = entry.path + "/.scarf/config.json"
         let guarded = GuardedJSONStore(transport: transport, label: "config.json")
         let (inspection, existingRoot) = guarded.inspectDecoding(
@@ -571,8 +472,6 @@ public struct ProjectMCPTools: Sendable {
             ]
         }
 
-        // Mutate the graph we read — every top-level key we don't own
-        // (comments, per-tool sections, a future schema's fields) survives.
         root["schemaVersion"] = .int(2)
         root["templateId"] = .string(existingTemplateID)
         root["values"] = .object(values)
@@ -609,11 +508,6 @@ public struct ProjectMCPTools: Sendable {
         var repairFailures: [String: String] = [:]
 
         if shouldRepair {
-            // `repairAllSafe` walks `report.safelyRepairable`, which is
-            // empty while the registry decode is lossy — the refusal is
-            // the service's, not re-implemented here. Scoping to one
-            // project filters the findings we hand it, so `repair: true`
-            // on one project never quietly fixes another.
             let scoped = entry.map { subject in
                 ProjectDoctorReport(
                     findings: findings(of: report, concerning: subject),
@@ -623,22 +517,19 @@ public struct ProjectMCPTools: Sendable {
                 )
             } ?? report
 
-            let attempted = scoped.safelyRepairable.map(\.id)
+            let attempted = scoped.safelyRepairable.map(\ProjectDoctorFinding.id)
             repairFailures = doctor.repairAllSafe(scoped)
             repaired = attempted.filter { repairFailures[$0] == nil }
-            // Repairs change what the next pass sees, so the report we
-            // hand back is a fresh one — a stale report would tell the
-            // agent to fix what it just fixed.
             report = doctor.diagnose()
         }
 
-        let findings = entry.map { findings(of: report, concerning: $0) } ?? report.findings
+        let scopedFindings = entry.map { findings(of: report, concerning: $0) } ?? report.findings
 
         var fields: [String: JSONValue] = [
             "summary": .string(report.summary),
             "projectCount": .int(report.projectCount),
-            "healthy": .bool(findings.filter { $0.severity > .info }.isEmpty),
-            "findings": .array(findings.map(encode)),
+            "healthy": .bool(scopedFindings.filter { $0.severity > .info }.isEmpty),
+            "findings": .array(scopedFindings.map(encode)),
         ]
         if let entry { fields["project"] = .string(entry.name) }
         if let block = report.repairBlock {
@@ -655,14 +546,6 @@ public struct ProjectMCPTools: Sendable {
         return .ok(try render(fields))
     }
 
-    /// Every finding that concerns one project, INFORMATIONAL ONES
-    /// INCLUDED.
-    ///
-    /// `ProjectDoctorReport.issues(forProjectPath:name:)` filters
-    /// `issues`, which drops `.info` — right for a cockpit health row,
-    /// wrong here twice over: the scoped report would hide history the
-    /// unscoped one shows, and a safe repair attached to an info finding
-    /// would run unscoped but not scoped. One tool, one contract.
     private func findings(
         of report: ProjectDoctorReport,
         concerning subject: ProjectEntry
@@ -696,10 +579,6 @@ public struct ProjectMCPTools: Sendable {
 
     // MARK: - Shared helpers
 
-    /// Resolve a `project` argument, which may be a display name or an
-    /// absolute path. Paths are compared after the same normalization
-    /// `ProjectIdentity` uses, so a trailing slash or a `./` is not a
-    /// "no such project".
     private func resolve(_ selector: String, in rows: [ProjectEntry]) -> ProjectEntry? {
         if let byName = rows.first(where: { $0.name == selector }) { return byName }
         guard selector.hasPrefix("/") else { return nil }
@@ -707,11 +586,6 @@ public struct ProjectMCPTools: Sendable {
         return rows.first { ProjectIdentity.normalizedPath($0.path) == normalized }
     }
 
-    /// Why a selector didn't resolve — which is NOT always "there is no
-    /// such project". A quarantined registry decodes to an EMPTY list, so
-    /// the honest answer there is "the file is damaged", not "you have no
-    /// projects": the latter sends the agent off to re-register projects
-    /// that already exist.
     private func notFoundMessage(
         _ selector: String,
         in loaded: ProjectDashboardService.RegistryLoadResult
@@ -734,9 +608,6 @@ public struct ProjectMCPTools: Sendable {
         return head + list
     }
 
-    /// The registry's health, on every read tool's response. An agent
-    /// that is about to write needs to know the file is damaged BEFORE
-    /// its write is refused.
     private func registryHealth(
         _ loaded: ProjectDashboardService.RegistryLoadResult
     ) -> JSONValue {
@@ -757,15 +628,6 @@ public struct ProjectMCPTools: Sendable {
         return .object(fields)
     }
 
-    /// The refusal an AGENT reads, for the app-wide lossy rule
-    /// (`RegistryLoadResult.loss`). Field-level salvage does not block:
-    /// the dropped field held an invalid value, and writing without it is
-    /// the repair.
-    ///
-    /// Advisory only — `ProjectDashboardService.saveRegistry` refuses the
-    /// write itself. What this adds is a message the model can act on
-    /// (which tool, which file, what to run next) instead of a thrown
-    /// error surfacing as a generic tool failure.
     private func lossyRefusal(
         _ loaded: ProjectDashboardService.RegistryLoadResult,
         verb: String
@@ -808,10 +670,6 @@ public struct ProjectMCPTools: Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// Accepts `"true"` / `"false"` as well as real booleans, for the same
-    /// reason `dashboard` accepts a JSON string: models emit stringified
-    /// booleans constantly, and refusing one buys a retry loop rather than
-    /// any safety.
     private func optionalBool(_ arguments: [String: JSONValue], _ key: String) throws -> Bool? {
         guard let value = arguments[key], value != .null else { return nil }
         switch value {
