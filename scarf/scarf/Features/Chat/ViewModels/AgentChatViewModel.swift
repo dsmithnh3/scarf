@@ -139,10 +139,15 @@ final class AgentChatViewModel {
         slashHintPresentation = slashHintPresenter.presentation(for: draft)
     }
 
-    /// Rebuild the hint registry when Hermes ACP advertises live commands.
-    /// Empty discovery keeps the static Scarf + Hermes fallback catalogs.
+    /// Rebuild the hint registry when the backend advertises live commands.
+    /// Hermes keeps its static fallback when discovery is empty. Claude replaces
+    /// its (statically empty) catalog with initialize / `commands_changed` rows.
     private func applyDiscoveredSlashCommands(from snapshot: AgentConversationState) {
-        if snapshot.discoveredSlashCommands.isEmpty {
+        if backendID == .claudeCode {
+            slashHintPresenter.registry = baseSlashRegistry.mergingLiveClaudeCommands(
+                snapshot.discoveredSlashCommands
+            )
+        } else if snapshot.discoveredSlashCommands.isEmpty {
             slashHintPresenter.registry = baseSlashRegistry
         } else {
             slashHintPresenter.registry = baseSlashRegistry.mergingLiveHermesACPCommands(

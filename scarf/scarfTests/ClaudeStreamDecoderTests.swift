@@ -17,6 +17,22 @@ struct ClaudeStreamDecoderTests {
         ))])
     }
 
+    @Test("commands_changed replaces the slash list and hook noise is ignored")
+    func commandsChanged() async throws {
+        let decoder = ClaudeStreamDecoder()
+        let line = #"{"type":"system","subtype":"commands_changed","commands":[{"name":"review","description":"Review the diff","argumentHint":"[path]"}],"session_id":"s"}"#
+        let events = try await decoder.decode(line: line)
+        guard case .availableCommandsUpdated(let commands) = events.first else {
+            Issue.record("expected availableCommandsUpdated")
+            return
+        }
+        #expect(commands.map(\.name) == ["review"])
+        #expect(commands.first?.argumentHint == "[path]")
+        #expect(commands.first?.source == .claudeCode)
+        let hooks = try await decoder.decode(line: #"{"type":"system","subtype":"hook_started","session_id":"s"}"#)
+        #expect(hooks.isEmpty)
+    }
+
     @Test("partial text and thinking deltas stream incrementally")
     func partialDeltas() async throws {
         let decoder = ClaudeStreamDecoder()

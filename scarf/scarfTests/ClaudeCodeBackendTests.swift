@@ -81,14 +81,74 @@ struct ClaudeCodeBackendTests {
 
         try await backend.respond(to: request, optionID: "allow", in: session)
 
-        let sent = try await channel.waitForSentCount(1)
-        let data = try #require(sent[0].data(using: .utf8))
+        let sent = try await channel.waitForSentCount(2)
+        let responseLine = try #require(sent.last { $0.contains("\"request_id\":\"req_host\"") })
+        let data = try #require(responseLine.data(using: .utf8))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["type"] as? String == "control_response")
         let outer = try #require(json["response"] as? [String: Any])
         #expect(outer["request_id"] as? String == "req_host")
         let response = try #require(outer["response"] as? [String: Any])
         #expect(response["behavior"] as? String == "allow")
+
+        await backend.close(session: session)
+        collectTask.cancel()
+    }
+
+    @Test("initialize handshake caches models, publishes commands, and strips API keys from the child env")
+    func initializeHandshakePublishesModelsAndCommands() async throws {
+        let channel = PermissionMockChannel()
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/tmp/claude" },
+            installationProbe: { _ in .available(version: "2.1.289") },
+            environmentProvider: {
+                [
+                    "PATH": "/usr/bin",
+                    "ANTHROPIC_API_KEY": "stale-gui-key",
+                    "SCARF_KEEP": "yes",
+                ]
+            },
+            authStatusProbe: { _, _ in .notProbed },
+            channelFactory: { _, environment in
+                #expect(environment["ANTHROPIC_API_KEY"] == nil)
+                #expect(environment["PATH"] == "/usr/bin")
+                #expect(environment["SCARF_KEEP"] == "yes")
+                return channel
+            }
+        )
+        let collector = CommandEventCollector()
+        let collectTask = Task { await collector.consume(backend.events) }
+
+        let session = try await backend.createSession(
+            configuration: AgentSessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true)
+            )
+        )
+
+        let sent = try await channel.waitForSentCount(1)
+        let initData = try #require(sent[0].data(using: .utf8))
+        let initJSON = try #require(JSONSerialization.jsonObject(with: initData) as? [String: Any])
+        let requestID = try #require(initJSON["request_id"] as? String)
+        let request = try #require(initJSON["request"] as? [String: Any])
+        #expect(request["subtype"] as? String == "initialize")
+
+        let response = """
+        {"type":"control_response","response":{"subtype":"success","request_id":"\(requestID)","response":{"models":[{"value":"default","displayName":"Default (recommended)"}],"commands":[{"name":"help","description":"Show help","argumentHint":""}],"account":{"apiProvider":"firstParty"}}}}
+        """
+        await channel.emit(response)
+
+        let commands = try await collector.nextCommands()
+        #expect(commands.map(\.name) == ["help"])
+        #expect(commands.first?.source == .claudeCode)
+        let models = try await backend.models()
+        #expect(models.map(\.id) == ["default"])
+        #expect(models.map(\.displayName) == ["Default (recommended)"])
+
+        await channel.emit(
+            #"{"type":"system","subtype":"commands_changed","commands":[{"name":"review","description":"Review","argumentHint":"[path]"}]}"#
+        )
+        let replaced = try await collector.nextCommands()
+        #expect(replaced.map(\.name) == ["review"])
 
         await backend.close(session: session)
         collectTask.cancel()
@@ -200,8 +260,9 @@ struct ClaudeCodeBackendTests {
 
         try await backend.respond(to: request, optionID: "allow", in: session)
 
-        let sent = try await channel.waitForSentCount(1)
-        let data = try #require(sent[0].data(using: .utf8))
+        let sent = try await channel.waitForSentCount(2)
+        let responseLine = try #require(sent.last { $0.contains("\"request_id\":\"req_perm\"") })
+        let data = try #require(responseLine.data(using: .utf8))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["type"] as? String == "control_response")
         let outer = try #require(json["response"] as? [String: Any])
@@ -239,8 +300,9 @@ struct ClaudeCodeBackendTests {
 
         try await backend.cancelPermission(request, in: session)
 
-        let sent = try await channel.waitForSentCount(1)
-        let data = try #require(sent[0].data(using: .utf8))
+        let sent = try await channel.waitForSentCount(2)
+        let responseLine = try #require(sent.last { $0.contains("\"request_id\":\"req_cancel\"") })
+        let data = try #require(responseLine.data(using: .utf8))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let outer = try #require(json["response"] as? [String: Any])
         #expect(outer["request_id"] as? String == "req_cancel")
@@ -870,6 +932,29 @@ private actor PermissionMockChannel: ACPChannel {
         if sent.count >= count { return sent }
         return try await withCheckedThrowingContinuation { continuation in
             sentWaiters.append(continuation)
+        }
+    }
+}
+
+private actor CommandEventCollector {
+    private var commands: [[AgentSlashCommandDescriptor]] = []
+    private var waiters: [CheckedContinuation<[AgentSlashCommandDescriptor], Error>] = []
+
+    func consume(_ events: AsyncStream<AgentEvent>) async {
+        for await event in events {
+            guard case .availableCommandsUpdated(let commands) = event else { continue }
+            if waiters.isEmpty {
+                self.commands.append(commands)
+            } else {
+                waiters.removeFirst().resume(returning: commands)
+            }
+        }
+    }
+
+    func nextCommands() async throws -> [AgentSlashCommandDescriptor] {
+        if !commands.isEmpty { return commands.removeFirst() }
+        return try await withCheckedThrowingContinuation { continuation in
+            waiters.append(continuation)
         }
     }
 }

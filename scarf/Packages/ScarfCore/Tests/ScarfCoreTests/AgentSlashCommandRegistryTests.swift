@@ -335,4 +335,65 @@ struct AgentSlashCommandRegistryTests {
         #expect(claudeHints.allSatisfy { $0.source == .scarfLocal })
         #expect(!claudeHints.map(\.name).contains("help"))
     }
+
+    @Test("Claude command mapper keeps initialize rows and drops empty names")
+    func claudeCommandMapperUsesDiscoveredRowsOnly() {
+        let mapped = AgentSlashCommandCatalogs.claudeCodeCommands(from: [
+            AgentSlashCommandCatalogs.ClaudeDiscoveredCommand(
+                name: "/help",
+                description: "Show help",
+                argumentHint: "",
+                aliases: ["h"]
+            ),
+            AgentSlashCommandCatalogs.ClaudeDiscoveredCommand(
+                name: "  ",
+                description: "blank"
+            ),
+            AgentSlashCommandCatalogs.ClaudeDiscoveredCommand(
+                name: "review",
+                description: "Review the diff",
+                argumentHint: "[path]"
+            ),
+        ])
+
+        #expect(mapped.map(\.name) == ["help", "review"])
+        #expect(mapped[0].aliases == ["h"])
+        #expect(mapped[0].argumentHint == nil)
+        #expect(mapped[1].argumentHint == "[path]")
+        #expect(mapped.allSatisfy { $0.source == .claudeCode })
+        #expect(mapped.allSatisfy { $0.execution == .forwardToBackend })
+        #expect(mapped.allSatisfy { $0.backendScope == .backends([.claudeCode]) })
+        #expect(AgentSlashCommandCatalogs.claudeCode.isEmpty)
+    }
+
+    @Test("live Claude commands replace the Claude list without hiding behind Hermes names")
+    func liveClaudeCommandsReplaceAndAreVisibleBesideHermesHelp() {
+        let base = AgentSlashCommandCatalogs.makeRegistry(hermesPreferCompressSpelling: true)
+        let live = AgentSlashCommandCatalogs.claudeCodeCommands(from: [
+            AgentSlashCommandCatalogs.ClaudeDiscoveredCommand(
+                name: "help",
+                description: "Claude help"
+            ),
+        ])
+        let merged = base.mergingLiveClaudeCommands(live)
+        let hints = merged.hints(
+            matching: "",
+            backendID: .claudeCode,
+            capabilities: [.streaming, .sessions]
+        )
+
+        #expect(hints.first { $0.name == "help" }?.description == "Claude help")
+        #expect(hints.first { $0.name == "help" }?.source == .claudeCode)
+        #expect(hints.map(\.name).contains("scarf-help"))
+        #expect(!hints.map(\.name).contains("compress"))
+
+        let cleared = base.mergingLiveClaudeCommands([])
+        let clearedHints = cleared.hints(
+            matching: "",
+            backendID: .claudeCode,
+            capabilities: [.streaming, .sessions]
+        )
+        #expect(!clearedHints.map(\.name).contains("help"))
+        #expect(clearedHints.map(\.name).contains("scarf-help"))
+    }
 }

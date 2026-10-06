@@ -27,6 +27,9 @@ actor ClaudeStreamDecoder {
 
         switch json["type"] as? String {
         case "system":
+            if json["subtype"] as? String == "commands_changed" {
+                return decodeCommandsChanged(json)
+            }
             return decodeSystem(json)
         case "stream_event":
             return decodeStreamEvent(json)
@@ -62,6 +65,22 @@ actor ClaudeStreamDecoder {
             workingDirectory: cwd,
             metadata: metadata
         ))]
+    }
+
+    /// `commands_changed` replaces the slash list. A missing `commands` array
+    /// is ignored so a partial frame cannot wipe a list the handshake stored.
+    private func decodeCommandsChanged(_ json: [String: Any]) -> [AgentEvent] {
+        guard let rows = json["commands"] as? [[String: Any]] else { return [] }
+        let discovered = rows.compactMap { row -> AgentSlashCommandCatalogs.ClaudeDiscoveredCommand? in
+            guard let name = row["name"] as? String else { return nil }
+            return AgentSlashCommandCatalogs.ClaudeDiscoveredCommand(
+                name: name,
+                description: row["description"] as? String ?? "",
+                argumentHint: row["argumentHint"] as? String,
+                aliases: row["aliases"] as? [String] ?? []
+            )
+        }
+        return [.availableCommandsUpdated(AgentSlashCommandCatalogs.claudeCodeCommands(from: discovered))]
     }
 
     private func decodeStreamEvent(_ json: [String: Any]) -> [AgentEvent] {

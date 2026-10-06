@@ -805,14 +805,14 @@ The key architectural rule is consistent throughout:
 
 Updated 2026-10-06: Phases 1–5 foundations are largely GREEN on `cursor/session-lifecycle-hardening-89c0`. Many Priority A CLUI *concepts* (slash registry/UI, permission coordinator, extensions catalog model, provider diagnostics) are already Scarf-native.
 
-**`macOS-CLUI-CC` remains unreadable** in cloud agents (local Mac path absent; GitHub 404). Do not invent Opal contents. Full re-rank: `documents/research/2026-10-06-clui-scarf-production-transfer.md`.
+**`macOS-CLUI-CC` was read locally on 2026-10-06.** Ranked steal/adapt/skip (order unchanged): `documents/research/2026-10-06-clui-scarf-production-transfer.md`. Installed CLI: 2.1.289.
 
-**Do next (Anthropic-verified — CLUI optional):**
+**Do next (order confirmed):**
 
-1. Claude `auth status` → `AgentAuthHealth` (no OAuth UI);
+1. Claude `auth status` → `AgentAuthHealth` (no OAuth UI; Claude child env drops harvested `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`);
 2. Control `initialize` encode/decode + handshake;
 3. `models()` from initialize;
 4. Claude slash from initialize + `commands_changed`;
-5. Optional Scarf-native extensions browser UI.
+5. Optional Scarf-native read-only extensions browser UI.
 
-**Defer until CLUI is reachable:** line-level `ClaudeEventNormalizer` / bootstrap delta vs Scarf. **Skip:** Opal shell, second coordinator, native agent loops, Claude JSONL history transplant. Codex stays after Claude bridges.
+**Cite only, do not port ahead of those slices:** `ClaudeEventNormalizer` gaps vs `ClaudeStreamDecoder`, and CLUI's login-PATH / `CLAUDE_CODE_*` strip (the strip is part of the Claude env in slice 1, not a separate phase). **Skip:** Opal shell, second coordinator, native agent loops, hard-coded opus/sonnet/haiku, Claude JSONL history transplant. Codex stays after Claude bridges.

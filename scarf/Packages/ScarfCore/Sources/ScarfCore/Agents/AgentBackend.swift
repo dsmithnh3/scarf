@@ -35,10 +35,9 @@ public protocol AgentBackend: Sendable {
 
     /// Credential/auth health from a verified probe only.
     ///
-    /// Default is ``AgentAuthHealth/notProbed``. Concrete backends override
-    /// when a real file/env/protocol check exists (Hermes today). Do not invent
-    /// OAuth UI or Claude credential parsers here. Model discovery stays
-    /// separate and remains blocked until a verified path exists.
+    /// Default is ``AgentAuthHealth/notProbed``. Hermes probes its credential
+    /// files. Claude Code probes `claude auth status`. Do not invent OAuth UI
+    /// or parse Keychain / credential files here.
     func authHealth() async -> AgentAuthHealth
 
     func models() async throws -> [AgentModel]

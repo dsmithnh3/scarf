@@ -216,13 +216,60 @@ public enum AgentSlashCommandCatalogs: Sendable {
         ]
     }
 
-    /// Claude Code catalog stub.
+    /// Static Claude catalog.
     ///
-    /// Empty until Scarf verifies a structured discovery path or that literal
-    /// slash text is interpreted correctly through `ClaudeCodeBackend`'s
-    /// stream-json channel. Do not invent CLI menus here; capability
-    /// advertisement for host permissions lives on `ClaudeCodeBackend`.
+    /// Stays empty. Live rows come from control `initialize` / `commands_changed`
+    /// via ``claudeCodeCommands(from:)``. Do not hard-code CLI menus here.
     public static let claudeCode: [AgentSlashCommandDescriptor] = []
+
+    /// One slash command taken from Claude Code's initialize `commands` array
+    /// or a `commands_changed` push. `name` is the CLI's skill name without a
+    /// leading slash; a leading slash is stripped if a fixture includes one.
+    public struct ClaudeDiscoveredCommand: Equatable, Sendable {
+        public var name: String
+        public var description: String
+        public var argumentHint: String?
+        public var aliases: [String]
+
+        public init(
+            name: String,
+            description: String,
+            argumentHint: String? = nil,
+            aliases: [String] = []
+        ) {
+            self.name = name
+            self.description = description
+            self.argumentHint = argumentHint
+            self.aliases = aliases
+        }
+    }
+
+    /// Map a verified Claude command list into registry rows.
+    ///
+    /// Empty names are dropped. Rows are scoped to Claude Code and forwarded
+    /// as literal slash text. This does not advertise a new capability flag.
+    public static func claudeCodeCommands(
+        from discovered: [ClaudeDiscoveredCommand]
+    ) -> [AgentSlashCommandDescriptor] {
+        discovered.compactMap { command in
+            var name = command.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.hasPrefix("/") {
+                name = String(name.dropFirst())
+            }
+            guard !name.isEmpty else { return nil }
+            let hint = command.argumentHint?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AgentSlashCommandDescriptor(
+                name: name,
+                description: command.description,
+                aliases: command.aliases,
+                backendScope: .backends([.claudeCode]),
+                requiredCapabilities: [],
+                argumentHint: (hint?.isEmpty == false) ? hint : nil,
+                execution: .forwardToBackend,
+                source: .claudeCode
+            )
+        }
+    }
 
     /// Production merge order: Scarf-local first (shadows backend duplicates),
     /// then Hermes, then Claude. Hermes remains the default backend route.

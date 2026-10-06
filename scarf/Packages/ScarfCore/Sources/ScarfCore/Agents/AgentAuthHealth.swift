@@ -2,11 +2,11 @@ import Foundation
 
 /// Truthful provider credential/auth health for diagnostics.
 ///
-/// Only report detected / missing when a verified probe exists. Today that is
-/// Hermes via the same env / `.env` / `auth.json` / config checks that feed
-/// chat's "No AI provider credentials detected" banner. Backends without a
-/// verified probe (Claude Code today) must use ``notProbed`` — never invent
-/// OAuth, login flows, or Claude credential file parsers.
+/// Only report detected / missing when a verified probe exists. Hermes uses
+/// the env / `.env` / `auth.json` / config checks that feed chat's credential
+/// banner. Claude Code uses `claude auth status` (`loggedIn` only). A failed
+/// or absent probe stays ``notProbed``. Never invent OAuth UI or parse
+/// Keychain / credential files.
 public enum AgentAuthHealth: Equatable, Sendable {
     /// Verified probe found at least one AI credential the backend would accept.
     case credentialsDetected

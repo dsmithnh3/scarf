@@ -10,6 +10,7 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     typealias ExecutableResolver = @Sendable () -> String?
     typealias InstallationProbe = @Sendable (String) async -> AgentInstallationStatus
     typealias EnvironmentProvider = @Sendable () -> [String: String]
+    typealias AuthStatusProbe = @Sendable (_ executable: String, _ environment: [String: String]) async -> AgentAuthHealth
     typealias ChannelFactory = @Sendable (
         _ command: ClaudeProcessCommand,
         _ environment: [String: String]
@@ -20,6 +21,7 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         let decoder: ClaudeStreamDecoder
         let incomingTask: Task<Void, Never>
         let stderrTask: Task<Void, Never>
+        var initializeRequestID: String?
     }
 
     private struct PendingPermission: Sendable {
@@ -50,11 +52,14 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     private let executableResolver: ExecutableResolver
     private let installationProbe: InstallationProbe
     private let environmentProvider: EnvironmentProvider
+    private let authStatusProbe: AuthStatusProbe
     private let channelFactory: ChannelFactory?
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var runtimes: [String: Runtime] = [:]
     private var pendingPermissions: [String: PendingPermission] = [:]
+    /// Last initialize `models` list. Empty until a fixture-shaped success payload arrives.
+    private var discoveredModels: [AgentModel] = []
 
     init(
         executableResolver: @escaping ExecutableResolver = {
@@ -65,11 +70,13 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         environmentProvider: @escaping EnvironmentProvider = {
             HermesFileService.enrichedEnvironment()
         },
+        authStatusProbe: @escaping AuthStatusProbe = ClaudeAuthStatusProbe.run,
         channelFactory: ChannelFactory? = nil
     ) {
         self.executableResolver = executableResolver
         self.installationProbe = installationProbe
         self.environmentProvider = environmentProvider
+        self.authStatusProbe = authStatusProbe
         self.channelFactory = channelFactory
 
         var continuation: AsyncStream<AgentEvent>.Continuation!
@@ -90,12 +97,14 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         executableResolver()
     }
 
+    nonisolated func authHealth() async -> AgentAuthHealth {
+        guard let executable = executableResolver() else { return .notProbed }
+        let environment = ClaudeProcessEnvironment.sanitized(environmentProvider())
+        return await authStatusProbe(executable, environment)
+    }
+
     nonisolated func models() async throws -> [AgentModel] {
-        // BLOCKED: ClaudeControlProtocol has no verified control-initialize /
-        // available-models parser yet (only can_use_tool + interrupt). Do not
-        // hard-code aliases that go stale; keep empty until a discovery path
-        // is verified end-to-end.
-        []
+        await discoveredModels
     }
 
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
@@ -274,14 +283,18 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
             resume: resume
         )
         let command = ClaudeProcessConfiguration.command(for: launch)
+        let baseEnvironment = environmentProvider
+        let sanitizedEnvironment: EnvironmentProvider = {
+            ClaudeProcessEnvironment.sanitized(baseEnvironment())
+        }
         let manager: ClaudeProcessManager
         if let channelFactory {
             manager = ClaudeProcessManager(
                 channelFactory: channelFactory,
-                environmentProvider: environmentProvider
+                environmentProvider: sanitizedEnvironment
             )
         } else {
-            manager = ClaudeProcessManager(environmentProvider: environmentProvider)
+            manager = ClaudeProcessManager(environmentProvider: sanitizedEnvironment)
         }
         let decoder = ClaudeStreamDecoder()
         let streams = try await manager.start(command: command)
@@ -295,12 +308,25 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
             await self.drainStderr(streams.stderr, sessionID: session.id)
         }
 
+        let initializeRequestID = ClaudeControlProtocol.makeRequestID()
         runtimes[session.id] = Runtime(
             manager: manager,
             decoder: decoder,
             incomingTask: incomingTask,
-            stderrTask: stderrTask
+            stderrTask: stderrTask,
+            initializeRequestID: initializeRequestID
         )
+        do {
+            try await manager.sendRecord(
+                ClaudeControlProtocol.encodeInitialize(requestID: initializeRequestID)
+            )
+        } catch {
+            runtimes[session.id] = nil
+            incomingTask.cancel()
+            stderrTask.cancel()
+            await manager.close()
+            throw error
+        }
     }
 
     private func consumeIncoming(
@@ -314,7 +340,25 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
 
                 do {
                     if let control = try ClaudeControlProtocol.decodeResponse(line) {
-                        if !control.isSuccess {
+                        let isInitialize = control.isSuccess
+                            && control.requestID == runtimes[sessionID]?.initializeRequestID
+                        if isInitialize, let result = try ClaudeControlProtocol.decodeInitializeResult(line) {
+                            let models = result.models.map {
+                                AgentModel(id: $0.value, displayName: $0.displayName)
+                            }
+                            let commands = AgentSlashCommandCatalogs.claudeCodeCommands(
+                                from: result.commands.map {
+                                    AgentSlashCommandCatalogs.ClaudeDiscoveredCommand(
+                                        name: $0.name,
+                                        description: $0.description,
+                                        argumentHint: $0.argumentHint,
+                                        aliases: $0.aliases
+                                    )
+                                }
+                            )
+                            discoveredModels = models
+                            yield(.availableCommandsUpdated(commands), sessionID: sessionID)
+                        } else if !control.isSuccess {
                             yield(.error(AgentError(
                                 code: "claude.control-response-error",
                                 message: control.errorMessage ?? "Claude Code rejected a control request",

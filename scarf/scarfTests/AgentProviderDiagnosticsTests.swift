@@ -102,14 +102,60 @@ struct AgentProviderDiagnosticsTests {
         #expect(await backend.authHealth() == .noCredentialsDetected)
     }
 
-    @Test("Claude auth health stays notProbed — no invented OAuth or credential parser")
-    func claudeAuthHealthNotProbed() async {
-        let backend = ClaudeCodeBackend(
+    @Test("Claude auth health maps claude auth status loggedIn and strips harvested API keys")
+    func claudeAuthHealthFromAuthStatus() async {
+        let loggedIn = ClaudeCodeBackend(
             executableResolver: { "/custom/bin/claude" },
             installationProbe: { _ in .available(version: "2.1-test") },
-            environmentProvider: { [:] }
+            environmentProvider: {
+                [
+                    "PATH": "/usr/bin",
+                    "ANTHROPIC_API_KEY": "stale-gui-key",
+                    "ANTHROPIC_AUTH_TOKEN": "stale-token",
+                    "CLAUDECODE": "1",
+                    "CLAUDE_CODE_ENTRYPOINT": "cli",
+                ]
+            },
+            authStatusProbe: { executable, environment in
+                #expect(executable == "/custom/bin/claude")
+                #expect(environment["PATH"] == "/usr/bin")
+                #expect(environment["ANTHROPIC_API_KEY"] == nil)
+                #expect(environment["ANTHROPIC_AUTH_TOKEN"] == nil)
+                #expect(environment["CLAUDECODE"] == nil)
+                #expect(environment["CLAUDE_CODE_ENTRYPOINT"] == nil)
+                return ClaudeAuthStatus.health(parsing: #"{"loggedIn":true,"authMethod":"claude.ai"}"#)
+            }
         )
-        #expect(await backend.authHealth() == .notProbed)
+        #expect(await loggedIn.authHealth() == .credentialsDetected)
+
+        let loggedOut = ClaudeCodeBackend(
+            executableResolver: { "/custom/bin/claude" },
+            installationProbe: { _ in .available(version: "2.1-test") },
+            environmentProvider: { [:] },
+            authStatusProbe: { _, _ in
+                ClaudeAuthStatus.health(parsing: #"{"loggedIn":false}"#)
+            }
+        )
+        #expect(await loggedOut.authHealth() == .noCredentialsDetected)
+    }
+
+    @Test("Claude auth health stays notProbed when the CLI is missing or the status JSON is unusable")
+    func claudeAuthHealthNotProbedWithoutAProbe() async {
+        var probed = false
+        let missing = ClaudeCodeBackend(
+            executableResolver: { nil },
+            installationProbe: { _ in .available(version: "should-not-run") },
+            environmentProvider: { [:] },
+            authStatusProbe: { _, _ in
+                probed = true
+                return .credentialsDetected
+            }
+        )
+        #expect(await missing.authHealth() == .notProbed)
+        #expect(probed == false)
+
+        #expect(ClaudeAuthStatus.health(parsing: "not json") == .notProbed)
+        #expect(ClaudeAuthStatus.health(parsing: #"{"authMethod":"claude.ai"}"#) == .notProbed)
     }
 
     @Test("Hermes local resolver returns nil when no candidate is executable")
@@ -232,7 +278,7 @@ struct AgentProviderDiagnosticsTests {
         )
     }
 
-    @Test("Claude models() stays empty until a verified discovery path exists")
+    @Test("Claude models() stays empty until initialize returns a models array")
     func claudeModelsDiscoveryBlocked() async throws {
         let backend = ClaudeCodeBackend(
             executableResolver: { "/custom/bin/claude" },

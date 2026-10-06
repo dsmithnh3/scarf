@@ -179,4 +179,30 @@ public struct AgentSlashCommandRegistry: Sendable, Equatable {
             commands: scarfLocal + normalizedLive + remainingStatic + other
         )
     }
+
+    /// Replace Claude-scoped rows with a live initialize / `commands_changed` list.
+    ///
+    /// Scarf-local commands stay first-wins. Hermes rows are omitted: this
+    /// registry is for a Claude session, and a global name dedupe would otherwise
+    /// let a Hermes `help` hide Claude's `help`. An empty `live` list clears
+    /// Claude commands (the CLI's replace semantics).
+    public func mergingLiveClaudeCommands(
+        _ live: [AgentSlashCommandDescriptor]
+    ) -> AgentSlashCommandRegistry {
+        let scarfLocal = commands.filter { $0.source == .scarfLocal }
+        let normalized = live.map { command in
+            AgentSlashCommandDescriptor(
+                name: command.name,
+                description: command.description,
+                aliases: command.aliases,
+                backendScope: .backends([.claudeCode]),
+                requiredCapabilities: command.requiredCapabilities,
+                argumentHint: command.argumentHint,
+                execution: .forwardToBackend,
+                category: command.category,
+                source: .claudeCode
+            )
+        }
+        return AgentSlashCommandRegistry(commands: scarfLocal + normalized)
+    }
 }

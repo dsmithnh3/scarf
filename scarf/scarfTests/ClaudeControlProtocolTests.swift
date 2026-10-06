@@ -4,6 +4,49 @@ import Testing
 
 @Suite("Claude Code control protocol")
 struct ClaudeControlProtocolTests {
+    @Test("initialize request is a minimal control_request")
+    func initializeEncoding() throws {
+        let line = try ClaudeControlProtocol.encodeInitialize(requestID: "req_init")
+        let data = try #require(line.data(using: .utf8))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["type"] as? String == "control_request")
+        #expect(json["request_id"] as? String == "req_init")
+        let request = try #require(json["request"] as? [String: Any])
+        #expect(request["subtype"] as? String == "initialize")
+        #expect(request.count == 1)
+    }
+
+    @Test("initialize success payload decodes models, commands, and non-secret account fields")
+    func initializeSuccessDecoding() throws {
+        let line = """
+        {"type":"control_response","response":{"subtype":"success","request_id":"req_init","response":{"models":[{"value":"default","displayName":"Default (recommended)","resolvedModel":"claude-opus-5","description":"Example"}],"commands":[{"name":"help","description":"Show help","argumentHint":"","aliases":["h"],"builtin":true}],"account":{"email":"person@example.com","tokenSource":"claude.ai","apiKeySource":"ANTHROPIC_API_KEY","apiProvider":"firstParty","subscriptionType":"pro"}}}}
+        """
+        let decoded = try ClaudeControlProtocol.decodeInitializeResult(line)
+        let result = try #require(decoded)
+        #expect(result.models == [
+            ClaudeInitializeModel(value: "default", displayName: "Default (recommended)")
+        ])
+        #expect(result.commands == [
+            ClaudeInitializeCommand(
+                name: "help",
+                description: "Show help",
+                argumentHint: "",
+                aliases: ["h"],
+                isBuiltin: true
+            )
+        ])
+        #expect(result.account.tokenSource == "claude.ai")
+        #expect(result.account.apiKeySource == "ANTHROPIC_API_KEY")
+        #expect(result.account.apiProvider == "firstParty")
+        #expect(result.account.subscriptionType == "pro")
+    }
+
+    @Test("interrupt success is not an initialize result")
+    func interruptSuccessIsNotInitialize() throws {
+        let line = #"{"type":"control_response","response":{"subtype":"success","request_id":"req_1","response":{"still_queued":[]}}}"#
+        #expect(try ClaudeControlProtocol.decodeInitializeResult(line) == nil)
+    }
+
     @Test("interrupt request uses current Claude control envelope")
     func interruptEncoding() throws {
         let request = ClaudeControlRequest.interrupt(requestID: "req_test")
