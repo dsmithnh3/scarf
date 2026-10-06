@@ -6,17 +6,34 @@ import ScarfCore
 /// This deliberately carries no selection or mutation API. Exposing backend
 /// health in Settings must not change the backend used by existing Hermes chat.
 /// `executablePath` is the discovered CLI path when known; `nil` means not
-/// found (never a guessed fallback).
+/// found (never a guessed fallback). `authHealth` is only non-`.notProbed`
+/// when a verified credential probe exists (Hermes today).
 struct AgentBackendStatusSnapshot: Identifiable, Equatable, Sendable {
     let id: AgentID
     let displayName: String
     let executablePath: String?
     let status: AgentInstallationStatus
+    let authHealth: AgentAuthHealth
+
+    init(
+        id: AgentID,
+        displayName: String,
+        executablePath: String?,
+        status: AgentInstallationStatus,
+        authHealth: AgentAuthHealth = .notProbed
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.executablePath = executablePath
+        self.status = status
+        self.authHealth = authHealth
+    }
 }
 
 /// Shared formatting for provider diagnostics detail lines (Settings + tests).
 enum AgentBackendStatusFormatting {
     static func detailText(for snapshot: AgentBackendStatusSnapshot) -> String {
+        let base: String
         switch snapshot.status {
         case .available(let version):
             var parts: [String] = []
@@ -27,16 +44,21 @@ enum AgentBackendStatusFormatting {
                 parts.append(path)
             }
             if parts.isEmpty {
-                return snapshot.id == .hermes ? "Hermes runtime detected" : "Runtime detected"
+                base = snapshot.id == .hermes ? "Hermes runtime detected" : "Runtime detected"
+            } else {
+                base = parts.joined(separator: " · ")
             }
-            return parts.joined(separator: " · ")
         case .notInstalled:
-            return snapshot.id == .claudeCode
+            base = snapshot.id == .claudeCode
                 ? "Claude Code executable was not found"
                 : "Runtime executable was not found"
         case .unavailable(let reason):
-            return reason
+            base = reason
         }
+        return AgentAuthHealthFormatting.appendingDetailSuffix(
+            to: base,
+            health: snapshot.authHealth
+        )
     }
 }
 
@@ -94,7 +116,8 @@ actor AgentRuntime {
                     id: backend.id,
                     displayName: backend.displayName,
                     executablePath: backend.resolvedExecutablePath(),
-                    status: await backend.installationStatus()
+                    status: await backend.installationStatus(),
+                    authHealth: await backend.authHealth()
                 )
             )
         }

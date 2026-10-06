@@ -1,0 +1,42 @@
+import Foundation
+
+/// Truthful provider credential/auth health for diagnostics.
+///
+/// Only report detected / missing when a verified probe exists. Today that is
+/// Hermes via the same env / `.env` / `auth.json` / config checks that feed
+/// chat's "No AI provider credentials detected" banner. Backends without a
+/// verified probe (Claude Code today) must use ``notProbed`` — never invent
+/// OAuth, login flows, or Claude credential file parsers.
+public enum AgentAuthHealth: Equatable, Sendable {
+    /// Verified probe found at least one AI credential the backend would accept.
+    case credentialsDetected
+    /// Verified probe found none.
+    case noCredentialsDetected
+    /// No verified auth probe for this backend yet.
+    case notProbed
+}
+
+/// Shared copy for Settings / preference detail lines.
+public enum AgentAuthHealthFormatting {
+    /// Human-readable suffix, or `nil` when health must stay silent (not probed).
+    public static func detailSuffix(for health: AgentAuthHealth) -> String? {
+        switch health {
+        case .credentialsDetected:
+            return "AI credentials detected"
+        case .noCredentialsDetected:
+            return "No AI credentials detected"
+        case .notProbed:
+            return nil
+        }
+    }
+
+    /// Append an auth suffix to an existing diagnostics detail line.
+    public static func appendingDetailSuffix(
+        to detail: String,
+        health: AgentAuthHealth
+    ) -> String {
+        guard let suffix = detailSuffix(for: health) else { return detail }
+        if detail.isEmpty { return suffix }
+        return "\(detail) · \(suffix)"
+    }
+}

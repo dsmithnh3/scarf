@@ -1,4 +1,5 @@
 name: Multi-Agent Branch CI
+# Phase 5 auth-health filter includes AgentAuth.
 # Phase 4 permission coordinator filter includes AgentPermission.
 # Phase 3 extension catalog filter includes AgentExtension|AgentSlash.
 
@@ -55,7 +56,7 @@ jobs:
       - name: Run multi-agent behavior tests
         run: >-
           swift test --filter
-          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission|HermesPathSetInstalled'
+          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission|AgentAuth|HermesPathSetInstalled'
 
   macos-build:
     name: macOS App Build

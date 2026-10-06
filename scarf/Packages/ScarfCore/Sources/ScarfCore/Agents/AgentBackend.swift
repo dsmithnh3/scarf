@@ -30,8 +30,16 @@ public protocol AgentBackend: Sendable {
     func installationStatus() async -> AgentInstallationStatus
 
     /// Resolved CLI executable path when discoverable. `nil` means not found —
-    /// never a guessed fallback path. Auth/model discovery is out of scope.
+    /// never a guessed fallback path.
     func resolvedExecutablePath() -> String?
+
+    /// Credential/auth health from a verified probe only.
+    ///
+    /// Default is ``AgentAuthHealth/notProbed``. Concrete backends override
+    /// when a real file/env/protocol check exists (Hermes today). Do not invent
+    /// OAuth UI or Claude credential parsers here. Model discovery stays
+    /// separate and remains blocked until a verified path exists.
+    func authHealth() async -> AgentAuthHealth
 
     func models() async throws -> [AgentModel]
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession
@@ -55,6 +63,9 @@ public protocol AgentBackend: Sendable {
 extension AgentBackend {
     /// Default: no discoverable executable path.
     public func resolvedExecutablePath() -> String? { nil }
+
+    /// Default: no verified auth probe (stay silent in diagnostics).
+    public func authHealth() async -> AgentAuthHealth { .notProbed }
 
     /// Default: no structured history. Concrete backends override when a real
     /// protocol source exists.

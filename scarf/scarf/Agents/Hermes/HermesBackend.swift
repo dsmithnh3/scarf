@@ -9,6 +9,8 @@ import ScarfCore
 actor HermesBackend: SessionScopedAgentBackend {
     typealias ExecutableResolver = @Sendable () -> String?
     typealias InstallationProbe = @Sendable () async -> AgentInstallationStatus
+    /// Same verdict as chat's credential preflight (`HermesFileService.hasAnyAICredential`).
+    typealias CredentialProbe = @Sendable () -> Bool
     typealias ConversationHistoryLoader = @Sendable (ServerContext, String) async throws -> [AgentMessage]
 
     nonisolated let id: AgentID = .hermes
@@ -36,6 +38,7 @@ actor HermesBackend: SessionScopedAgentBackend {
     private let context: ServerContext
     private let executableResolver: ExecutableResolver
     private let installationProbe: InstallationProbe
+    private let credentialProbe: CredentialProbe
     private let conversationHistoryLoader: ConversationHistoryLoader
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
@@ -46,6 +49,7 @@ actor HermesBackend: SessionScopedAgentBackend {
         context: ServerContext = .local,
         executableResolver: ExecutableResolver? = nil,
         installationProbe: InstallationProbe? = nil,
+        credentialProbe: CredentialProbe? = nil,
         conversationHistoryLoader: ConversationHistoryLoader? = nil
     ) {
         self.context = context
@@ -69,6 +73,12 @@ actor HermesBackend: SessionScopedAgentBackend {
                 context: context,
                 executableResolver: resolver
             )
+        }
+
+        // Reuse the verified chat preflight — env / .env / auth.json / config —
+        // rather than inventing a second credential detector or OAuth UI.
+        self.credentialProbe = credentialProbe ?? {
+            HermesFileService(context: context).hasAnyAICredential()
         }
     }
 
@@ -113,6 +123,10 @@ actor HermesBackend: SessionScopedAgentBackend {
 
     nonisolated func resolvedExecutablePath() -> String? {
         executableResolver()
+    }
+
+    nonisolated func authHealth() async -> AgentAuthHealth {
+        credentialProbe() ? .credentialsDetected : .noCredentialsDetected
     }
 
     nonisolated func models() async throws -> [AgentModel] {

@@ -11,19 +11,23 @@ struct AgentProviderDiagnosticsTests {
             id: .claudeCode,
             displayName: "Claude Code",
             executablePath: "/opt/homebrew/bin/claude",
-            status: .available(version: "2.1.0")
+            status: .available(version: "2.1.0"),
+            authHealth: .notProbed
         )
         #expect(available.executablePath == "/opt/homebrew/bin/claude")
         #expect(available.status == .available(version: "2.1.0"))
+        #expect(available.authHealth == .notProbed)
 
         let missing = AgentBackendStatusSnapshot(
             id: .claudeCode,
             displayName: "Claude Code",
             executablePath: nil,
-            status: .notInstalled
+            status: .notInstalled,
+            authHealth: .notProbed
         )
         #expect(missing.executablePath == nil)
         #expect(missing.status == .notInstalled)
+        #expect(missing.authHealth == .notProbed)
     }
 
     @Test("Claude diagnostics expose resolved path when installed")
@@ -56,10 +60,12 @@ struct AgentProviderDiagnosticsTests {
         let backend = HermesBackend(
             context: .local,
             executableResolver: { nil },
-            installationProbe: nil
+            installationProbe: nil,
+            credentialProbe: { false }
         )
         #expect(backend.resolvedExecutablePath() == nil)
         #expect(await backend.installationStatus() == .notInstalled)
+        #expect(await backend.authHealth() == .noCredentialsDetected)
     }
 
     @Test("Hermes diagnostics expose resolved path and version when installed")
@@ -67,10 +73,43 @@ struct AgentProviderDiagnosticsTests {
         let backend = HermesBackend(
             context: .local,
             executableResolver: { "/opt/homebrew/bin/hermes" },
-            installationProbe: { .available(version: "3.5-test") }
+            installationProbe: { .available(version: "3.5-test") },
+            credentialProbe: { true }
         )
         #expect(backend.resolvedExecutablePath() == "/opt/homebrew/bin/hermes")
         #expect(await backend.installationStatus() == .available(version: "3.5-test"))
+    }
+
+    @Test("Hermes auth health reports credentials detected from verified probe")
+    func hermesAuthHealthCredentialsDetected() async {
+        let backend = HermesBackend(
+            context: .local,
+            executableResolver: { "/opt/homebrew/bin/hermes" },
+            installationProbe: { .available(version: "3.5-test") },
+            credentialProbe: { true }
+        )
+        #expect(await backend.authHealth() == .credentialsDetected)
+    }
+
+    @Test("Hermes auth health reports missing credentials from verified probe")
+    func hermesAuthHealthMissingCredentials() async {
+        let backend = HermesBackend(
+            context: .local,
+            executableResolver: { "/opt/homebrew/bin/hermes" },
+            installationProbe: { .available(version: "3.5-test") },
+            credentialProbe: { false }
+        )
+        #expect(await backend.authHealth() == .noCredentialsDetected)
+    }
+
+    @Test("Claude auth health stays notProbed — no invented OAuth or credential parser")
+    func claudeAuthHealthNotProbed() async {
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/custom/bin/claude" },
+            installationProbe: { _ in .available(version: "2.1-test") },
+            environmentProvider: { [:] }
+        )
+        #expect(await backend.authHealth() == .notProbed)
     }
 
     @Test("Hermes local resolver returns nil when no candidate is executable")
@@ -119,7 +158,8 @@ struct AgentProviderDiagnosticsTests {
             id: .claudeCode,
             displayName: "Claude Code",
             executablePath: "/opt/homebrew/bin/claude",
-            status: .available(version: "2.1.0")
+            status: .available(version: "2.1.0"),
+            authHealth: .notProbed
         )
         #expect(
             AgentBackendStatusFormatting.detailText(for: snapshot)
@@ -133,11 +173,62 @@ struct AgentProviderDiagnosticsTests {
             id: .claudeCode,
             displayName: "Claude Code",
             executablePath: nil,
-            status: .notInstalled
+            status: .notInstalled,
+            authHealth: .notProbed
         )
         #expect(
             AgentBackendStatusFormatting.detailText(for: snapshot)
                 == "Claude Code executable was not found"
+        )
+    }
+
+    @Test("status detail appends Hermes credential health when probed")
+    func statusDetailIncludesHermesAuthHealth() {
+        let withCreds = AgentBackendStatusSnapshot(
+            id: .hermes,
+            displayName: "Hermes",
+            executablePath: "/opt/homebrew/bin/hermes",
+            status: .available(version: "3.5"),
+            authHealth: .credentialsDetected
+        )
+        #expect(
+            AgentBackendStatusFormatting.detailText(for: withCreds)
+                == "3.5 · /opt/homebrew/bin/hermes · AI credentials detected"
+        )
+
+        let missingCreds = AgentBackendStatusSnapshot(
+            id: .hermes,
+            displayName: "Hermes",
+            executablePath: "/opt/homebrew/bin/hermes",
+            status: .available(version: "3.5"),
+            authHealth: .noCredentialsDetected
+        )
+        #expect(
+            AgentBackendStatusFormatting.detailText(for: missingCreds)
+                == "3.5 · /opt/homebrew/bin/hermes · No AI credentials detected"
+        )
+    }
+
+    @Test("Claude status detail does not invent auth claims when not probed")
+    func statusDetailClaudeAuthSilent() {
+        let snapshot = AgentBackendStatusSnapshot(
+            id: .claudeCode,
+            displayName: "Claude Code",
+            executablePath: "/opt/homebrew/bin/claude",
+            status: .available(version: "2.1.0"),
+            authHealth: .notProbed
+        )
+        #expect(
+            AgentBackendStatusFormatting.detailText(for: snapshot)
+                == "2.1.0 · /opt/homebrew/bin/claude"
+        )
+        #expect(
+            !AgentBackendStatusFormatting.detailText(for: snapshot)
+                .localizedCaseInsensitiveContains("credential")
+        )
+        #expect(
+            !AgentBackendStatusFormatting.detailText(for: snapshot)
+                .localizedCaseInsensitiveContains("oauth")
         )
     }
 
@@ -156,7 +247,8 @@ struct AgentProviderDiagnosticsTests {
         let backend = HermesBackend(
             context: .local,
             executableResolver: { "/opt/homebrew/bin/hermes" },
-            installationProbe: { .available(version: "3.5-test") }
+            installationProbe: { .available(version: "3.5-test") },
+            credentialProbe: { true }
         )
         #expect(try await backend.models().isEmpty)
     }

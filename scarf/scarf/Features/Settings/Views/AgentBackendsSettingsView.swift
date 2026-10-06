@@ -108,7 +108,7 @@ private struct AgentBackendStatusRow: View {
                 Text(detailText)
                     .scarfStyle(.caption)
                     .foregroundStyle(ScarfColor.foregroundMuted)
-                    .lineLimit(2)
+                    .lineLimit(3)
             }
 
             Spacer(minLength: ScarfSpace.s3)
