@@ -1,7 +1,7 @@
 # Scarf Multi-Agent Architecture Roadmap
 
-Updated: 2026-10-05
-Branch: `feature/multi-agent-architecture`
+Updated: 2026-10-06
+Branch: `cursor/session-lifecycle-hardening-89c0` (PR #1 → `feature/multi-agent-architecture`)
 Primary near-term backend: Claude Code CLI
 Compatibility requirement: Hermes remains the default backend and its existing backend/UI behavior must continue to work throughout the migration.
 
@@ -90,6 +90,29 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 - Phase 5 project preference auth-detail polish (`cd23e2c1`) — `ProjectAgentBackendProbe.authHealth` + preference option detail via `AgentAuthHealthFormatting` (same suffixes as Settings). New Project + Chat Settings map `statusSnapshots().authHealth`. Claude stays silent when `.notProbed`. Models still blocked; no OAuth. Tests: `ProjectAgentPreferencePresenterTests` auth suite. CI run [37394465278](https://github.com/dsmithnh3/scarf/actions/runs/37394465278) passed Multi-Agent Tests, ScarfCore Compile Gate, macOS App Build, and Claude Process Tests.
 
 ## Current TDD milestone
+
+### Phase 5 — diagnostics / preferences / permissions UI (this PR) — COMPLETE
+
+**GREEN for this PR's Phase 5 diagnostics/preferences slice + Phase 4 permission card UI.** No further unblocked multi-agent code slice remains on this branch without inventing a blocked source. Landed and CI-green on PR #1 (`cursor/session-lifecycle-hardening-89c0`):
+
+| Slice | Tip commits | CI |
+| --- | --- | --- |
+| Provider install/path/version diagnostics | `34655028` | [37387956415](https://github.com/dsmithnh3/scarf/actions/runs/37387956415) |
+| Project default agent preference UI | `d0f48cbe` | [37389266360](https://github.com/dsmithnh3/scarf/actions/runs/37389266360) |
+| Scarf-native permission card UI (Phase 4) | `046d23e4` | [37390800959](https://github.com/dsmithnh3/scarf/actions/runs/37390800959) |
+| Hermes credential-health diagnostics | `90851309` / `e283bf08` | [37393274059](https://github.com/dsmithnh3/scarf/actions/runs/37393274059) |
+| Preference-row auth-detail polish | `cd23e2c1` | [37394465278](https://github.com/dsmithnh3/scarf/actions/runs/37394465278) |
+
+**Still BLOCKED (do not invent; pause coding here):**
+
+1. Claude structured history — no verified protocol/file source; keep `fetchConversationHistory` as `[]`.
+2. Claude OAuth / credential auth probe — stays `.notProbed`.
+3. Claude slash-command discovery — catalog stays empty.
+4. Blind Rich Chat → `AgentBackend.models()` mapping — multi-agent `models()` stays `[]`; Hermes catalog UI remains authoritative.
+5. Codex adapter — roadmap Phase 4; no verified stub plan on this PR.
+6. Native agent loops / sub-agents — Priority C only; Scarf is not an agent runtime (charter).
+
+**Human decision point:** resume only after a verified discovery/auth/history source is cited (file:line / protocol), or after an explicit Codex/native-loop plan lands in the roadmap.
 
 ### Phase 5 — project preference auth-detail polish (models blocked)
 
@@ -227,7 +250,7 @@ Claude process cleanup is locked without a production change. Conversation close
 2. ~~Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.~~ **Done** — both stores are `GuardedSidecarStore` with `refuseForever`.
 3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI). Multi-Agent Tests [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 4. ~~Integrate Hermes skills/plugins/MCP read-only into the catalog.~~ **Done** — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call `HermesPluginDirectoryScanner`, `SkillsScanner`, and a lightweight config.yaml MCP roster; Claude skill catalog stays empty; no UI. Tests: `AgentExtensionCatalogHermesLoaderTests`. Commits `ce4b7232` / `fda7fcc8`. Multi-Agent+Compile+macOS [37372242630](https://github.com/dsmithnh3/scarf/actions/runs/37372242630); Claude prior [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
-5. Keep the CLUI adoption order unchanged: Claude history stays blocked; Claude slash discovery only once verified; permissions only behind truthful capabilities; Codex remains later. Phase 5 project-default preference + Hermes credential-health diagnostics (+ preference-row auth detail) landed; Phase 4 permission card UI landed on the coordinator; **multi-agent model discovery remains blocked** (empty `models()` — no Claude control-init model list; Hermes catalog UI stays authoritative). Claude auth stays `.notProbed` until a verified Claude credential probe exists. Next clear slice: truthful model listing once a verified `AgentBackend.models()` discovery bridge exists (do not invent lists), or a verified Claude auth/session probe (no invented OAuth).
+5. ~~Phase 5 diagnostics / preferences / permissions UI on this PR~~ **GREEN / COMPLETE for PR #1** — install/path/version diagnostics, project-default preference (+ auth-detail polish), Hermes credential health, and Scarf-native permission card. Keep the CLUI adoption order unchanged for what remains: Claude history stays blocked; Claude slash discovery only once verified; Codex remains later; native agent loops stay Priority C. **multi-agent model discovery remains blocked** (empty `models()` — no Claude control-init model list; Hermes catalog UI stays authoritative). Claude auth stays `.notProbed`. **No further unblocked code slice on this PR** — waiting on verified discovery/auth/history sources (or an explicit Codex stub plan) before the next TDD cut.
 
 ## macOS-CLUI-CC adoption analysis
 
@@ -371,13 +394,14 @@ These are substantial CLUI product features but are not prerequisites for Scarf'
 
 ### Phase 3 — Scarf-native setup and UX
 
-- Backend-aware slash command registry + Scarf-native hint query + multi-agent composer menu (`AgentSlashHintMenu`; no CLUI transplant).
-- Live Hermes ACP command discovery into the registry (static Hermes fallback retained).
-- Agent/provider settings for Hermes and Claude Code (installation/path/version + Hermes credential-health diagnostics landed in Settings and project preference detail; project-default backend picker landed; Claude auth still not probed; models blocked).
-- Project-level backend preference (Chat Settings + New Project via `ProjectAgentPreferencePresenter`, including verified Hermes auth-health detail); Hermes model presets remain Hermes-only.
-- Scarf-native backend indicator/switcher.
-- Transcript rendering for reasoning, tool calls, commands, files, usage, permissions, and errors.
-- Diff/artifact review surfaces adapted to Scarf's visual language.
+- [x] Backend-aware slash command registry + Scarf-native hint query + multi-agent composer menu (`AgentSlashHintMenu`; no CLUI transplant).
+- [x] Live Hermes ACP command discovery into the registry (static Hermes fallback retained).
+- [x] Agent/provider settings for Hermes and Claude Code — installation/path/version + Hermes credential-health diagnostics in Settings and project preference detail (Claude auth still not probed; models blocked).
+- [x] Project-level backend preference (Chat Settings + New Project via `ProjectAgentPreferencePresenter`, including verified Hermes auth-health detail); Hermes model presets remain Hermes-only.
+- [x] Scarf-native permission card on the multi-agent composer (Phase 4 coordinator; Hermes default).
+- [ ] Scarf-native backend indicator/switcher (product UX; not gated on blocked discovery — defer until a human prioritizes it over waiting on verified sources).
+- [ ] Transcript rendering for reasoning, tool calls, commands, files, usage, permissions, and errors.
+- [ ] Diff/artifact review surfaces adapted to Scarf's visual language.
 
 ### Phase 4 — Codex
 
