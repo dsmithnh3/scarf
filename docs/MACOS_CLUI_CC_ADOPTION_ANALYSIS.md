@@ -803,14 +803,16 @@ The key architectural rule is consistent throughout:
 
 ## 23. Immediate next action
 
-Controller lifecycle cleanup for replacement, resume, and close is GREEN in `AgentConversationController` (see the commits listed in section 2). The adoption order below is unchanged. Next, run the three multi-agent CI gates on this branch, then continue the code-level CLUI audit in this order:
+Updated 2026-10-06: Phases 1–5 foundations are largely GREEN on `cursor/session-lifecycle-hardening-89c0`. Many Priority A CLUI *concepts* (slash registry/UI, permission coordinator, extensions catalog model, provider diagnostics) are already Scarf-native.
 
-1. Claude provider/event normalization;
-2. session models/persistence/tool merging;
-3. slash commands;
-4. skills/plugins/MCP;
-5. permission coordinator;
-6. provider bootstrap/settings;
-7. Codex provider/normalizer.
+**`macOS-CLUI-CC` remains unreadable** in cloud agents (local Mac path absent; GitHub 404). Do not invent Opal contents. Full re-rank: `documents/research/2026-10-06-clui-scarf-production-transfer.md`.
 
-This order maximizes reuse while keeping the critical Hermes + Claude Code foundation stable.
+**Do next (Anthropic-verified — CLUI optional):**
+
+1. Claude `auth status` → `AgentAuthHealth` (no OAuth UI);
+2. Control `initialize` encode/decode + handshake;
+3. `models()` from initialize;
+4. Claude slash from initialize + `commands_changed`;
+5. Optional Scarf-native extensions browser UI.
+
+**Defer until CLUI is reachable:** line-level `ClaudeEventNormalizer` / bootstrap delta vs Scarf. **Skip:** Opal shell, second coordinator, native agent loops, Claude JSONL history transplant. Codex stays after Claude bridges.
