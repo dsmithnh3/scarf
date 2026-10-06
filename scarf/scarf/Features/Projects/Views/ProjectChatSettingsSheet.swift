@@ -340,7 +340,8 @@ struct ProjectChatSettingsSheet: View {
                     id: snapshot.id,
                     displayName: snapshot.displayName,
                     executablePath: snapshot.executablePath,
-                    status: snapshot.status
+                    status: snapshot.status,
+                    authHealth: snapshot.authHealth
                 )
             },
             isRemoteContext: context.isRemote

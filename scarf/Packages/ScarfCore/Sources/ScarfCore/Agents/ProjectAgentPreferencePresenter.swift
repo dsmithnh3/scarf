@@ -2,25 +2,29 @@ import Foundation
 
 /// Read-only probe fact used to build project default-agent options.
 ///
-/// Mirrors installation/path/version diagnostics without depending on the
-/// macOS `AgentRuntime` snapshot type. Auth and model discovery are out of
-/// scope — callers must not invent model lists here.
+/// Mirrors installation/path/version diagnostics (and verified auth health)
+/// without depending on the macOS `AgentRuntime` snapshot type. Model
+/// discovery stays out of scope — callers must not invent model lists here.
 public struct ProjectAgentBackendProbe: Equatable, Sendable {
     public let id: AgentID
     public let displayName: String
     public let executablePath: String?
     public let status: AgentInstallationStatus
+    /// Verified credential health when known; default ``AgentAuthHealth/notProbed``.
+    public let authHealth: AgentAuthHealth
 
     public init(
         id: AgentID,
         displayName: String,
         executablePath: String?,
-        status: AgentInstallationStatus
+        status: AgentInstallationStatus,
+        authHealth: AgentAuthHealth = .notProbed
     ) {
         self.id = id
         self.displayName = displayName
         self.executablePath = executablePath
         self.status = status
+        self.authHealth = authHealth
     }
 }
 
@@ -87,10 +91,13 @@ public enum ProjectAgentPreferencePresenter {
                     ProjectAgentPreferenceOption(
                         id: .claudeCode,
                         displayName: "Claude Code",
-                        detail: diagnosticDetail(
-                            version: availableVersion(claude.status),
-                            path: claude.executablePath,
-                            fallback: "Claude Code detected on this Mac"
+                        detail: AgentAuthHealthFormatting.appendingDetailSuffix(
+                            to: diagnosticDetail(
+                                version: availableVersion(claude.status),
+                                path: claude.executablePath,
+                                fallback: "Claude Code detected on this Mac"
+                            ),
+                            health: claude.authHealth
                         )
                     )
                 )
@@ -121,15 +128,20 @@ public enum ProjectAgentPreferencePresenter {
     }
 
     private static func hermesDetail(from probes: [ProjectAgentBackendProbe]) -> String {
-        guard let hermes = probes.first(where: { $0.id == .hermes }),
-              case .available = hermes.status
-        else {
-            return "Scarf's existing full-featured agent runtime"
+        let hermes = probes.first(where: { $0.id == .hermes })
+        let base: String
+        if let hermes, case .available = hermes.status {
+            base = diagnosticDetail(
+                version: availableVersion(hermes.status),
+                path: hermes.executablePath,
+                fallback: "Scarf's existing full-featured agent runtime"
+            )
+        } else {
+            base = "Scarf's existing full-featured agent runtime"
         }
-        return diagnosticDetail(
-            version: availableVersion(hermes.status),
-            path: hermes.executablePath,
-            fallback: "Scarf's existing full-featured agent runtime"
+        return AgentAuthHealthFormatting.appendingDetailSuffix(
+            to: base,
+            health: hermes?.authHealth ?? .notProbed
         )
     }
 

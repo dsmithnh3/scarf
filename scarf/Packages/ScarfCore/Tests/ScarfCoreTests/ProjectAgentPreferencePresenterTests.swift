@@ -68,6 +68,98 @@ struct ProjectAgentPreferencePresenterTests {
         )
     }
 
+    @Test("Hermes option detail appends detected AI credentials when probed")
+    func hermesDetailIncludesCredentialsDetected() {
+        let presentation = ProjectAgentPreferencePresenter.make(
+            preferredAgentID: .hermes,
+            probes: [
+                ProjectAgentBackendProbe(
+                    id: .hermes,
+                    displayName: "Hermes",
+                    executablePath: "/opt/homebrew/bin/hermes",
+                    status: .available(version: "3.5.0"),
+                    authHealth: .credentialsDetected
+                )
+            ],
+            isRemoteContext: false
+        )
+
+        #expect(
+            presentation.options[0].detail
+                == "3.5.0 · /opt/homebrew/bin/hermes · AI credentials detected"
+        )
+    }
+
+    @Test("Hermes option detail appends missing AI credentials when probed")
+    func hermesDetailIncludesNoCredentialsDetected() {
+        let presentation = ProjectAgentPreferencePresenter.make(
+            preferredAgentID: .hermes,
+            probes: [
+                ProjectAgentBackendProbe(
+                    id: .hermes,
+                    displayName: "Hermes",
+                    executablePath: "/usr/local/bin/hermes",
+                    status: .available(version: nil),
+                    authHealth: .noCredentialsDetected
+                )
+            ],
+            isRemoteContext: false
+        )
+
+        #expect(
+            presentation.options[0].detail
+                == "/usr/local/bin/hermes · No AI credentials detected"
+        )
+    }
+
+    @Test("Hermes fallback detail still appends auth when path/version are absent")
+    func hermesFallbackDetailIncludesAuth() {
+        let presentation = ProjectAgentPreferencePresenter.make(
+            preferredAgentID: .hermes,
+            probes: [
+                ProjectAgentBackendProbe(
+                    id: .hermes,
+                    displayName: "Hermes",
+                    executablePath: nil,
+                    status: .notInstalled,
+                    authHealth: .noCredentialsDetected
+                )
+            ],
+            isRemoteContext: false
+        )
+
+        #expect(
+            presentation.options[0].detail
+                == "Scarf's existing full-featured agent runtime · No AI credentials detected"
+        )
+    }
+
+    @Test("Claude option detail stays silent when auth health is not probed")
+    func claudeDetailOmitsUnprobedAuth() {
+        let presentation = ProjectAgentPreferencePresenter.make(
+            preferredAgentID: .hermes,
+            probes: [
+                ProjectAgentBackendProbe(
+                    id: .claudeCode,
+                    displayName: "Claude Code",
+                    executablePath: "/opt/homebrew/bin/claude",
+                    status: .available(version: "2.1.0"),
+                    authHealth: .notProbed
+                )
+            ],
+            isRemoteContext: false
+        )
+
+        #expect(
+            presentation.options.first(where: { $0.id == .claudeCode })?.detail
+                == "2.1.0 · /opt/homebrew/bin/claude"
+        )
+        #expect(
+            presentation.options.first(where: { $0.id == .claudeCode })?.detail
+                .contains("credentials") != true
+        )
+    }
+
     @Test("Claude notInstalled yields note and no Claude option")
     func claudeNotInstalledNote() {
         let presentation = ProjectAgentPreferencePresenter.make(
