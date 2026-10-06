@@ -91,9 +91,21 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 
 ## Current TDD milestone
 
+### Claude CLI bridges — verified sources found (implement next)
+
+**Sources verified (research only; no feature code yet).** Auth/models/slash for Claude are no longer “unknown how” — primary docs + Agent SDK `@anthropic-ai/claude-agent-sdk@0.3.291` types confirm:
+
+1. Reuse logged-in CLI via same-user spawn (Keychain / credential stores read by the CLI itself).
+2. Probe with `claude auth status` and/or control `initialize` → non-secret `account` fields.
+3. Discover `models` + `commands` from the same `initialize` success payload (`commands_changed` for live slash refresh).
+
+Full cite: [`documents/research/2026-10-06-claude-cli-bridge-sources.md`](../documents/research/2026-10-06-claude-cli-bridge-sources.md). Memory: `multi-agent-claude-cli-bridge-sources`.
+
+**Next code slice (not started):** implement ordered bridges — auth status → `ClaudeControlProtocol` initialize encode/decode → handshake cache → `models()` → slash catalog — still no OAuth UI, no Keychain/`.credentials.json` parsers, no hard-coded model lists. History stays Scarf transcripts until a version-pinned SDK-aligned path.
+
 ### Phase 5 — diagnostics / preferences / permissions UI (this PR) — COMPLETE
 
-**GREEN for this PR's Phase 5 diagnostics/preferences slice + Phase 4 permission card UI.** No further unblocked multi-agent code slice remains on this branch without inventing a blocked source. Landed and CI-green on PR #1 (`cursor/session-lifecycle-hardening-89c0`):
+**GREEN for this PR's Phase 5 diagnostics/preferences slice + Phase 4 permission card UI.** Landed and CI-green on PR #1 (`cursor/session-lifecycle-hardening-89c0`). Claude auth/models/slash **implementation** still pending the next slice above (sources now verified).
 
 | Slice | Tip commits | CI |
 | --- | --- | --- |
@@ -103,16 +115,16 @@ Current Claude Code work supports the core create/resume/send/interrupt/close an
 | Hermes credential-health diagnostics | `90851309` / `e283bf08` | [37393274059](https://github.com/dsmithnh3/scarf/actions/runs/37393274059) |
 | Preference-row auth-detail polish | `cd23e2c1` | [37394465278](https://github.com/dsmithnh3/scarf/actions/runs/37394465278) |
 
-**Still BLOCKED (do not invent; pause coding here):**
+**Still not implemented (sources verified for 2–4; do not invent alternate paths):**
 
-1. Claude structured history — no verified protocol/file source; keep `fetchConversationHistory` as `[]`.
-2. Claude OAuth / credential auth probe — stays `.notProbed`.
-3. Claude slash-command discovery — catalog stays empty.
-4. Blind Rich Chat → `AgentBackend.models()` mapping — multi-agent `models()` stays `[]`; Hermes catalog UI remains authoritative.
+1. Claude structured history — prefer Scarf transcripts; SDK `listSessions`/`getSessionMessages` later, version-pinned (see research doc).
+2. Claude auth probe — stays `.notProbed` until `claude auth status` / initialize `account` is wired.
+3. Claude slash-command discovery — catalog stays empty until initialize + `commands_changed`.
+4. Multi-agent `models()` — stays `[]` until initialize `models` is wired; Hermes Rich Chat catalog remains authoritative meanwhile.
 5. Codex adapter — roadmap Phase 4; no verified stub plan on this PR.
 6. Native agent loops / sub-agents — Priority C only; Scarf is not an agent runtime (charter).
 
-**Human decision point:** resume only after a verified discovery/auth/history source is cited (file:line / protocol), or after an explicit Codex/native-loop plan lands in the roadmap.
+**Human decision point:** next implement slice is the verified Claude CLI bridges above; Codex/native-loop still needs an explicit roadmap plan.
 
 ### Phase 5 — project preference auth-detail polish (models blocked)
 
