@@ -260,6 +260,25 @@ struct AgentConversationBackendHistoryReconciliationTests {
         _ = try #require(await completed.value)
         _ = started
 
+        // `consume` publishes state before persisting the transcript, so a
+        // second controller can race an in-flight save. Wait until the durable
+        // snapshot includes the assistant turn before restoring.
+        let transcriptStore = AgentConversationTranscriptStore(fileURL: transcriptURL)
+        var persistedContents: [String] = []
+        var persistedToolIDs: [String] = []
+        for _ in 0..<100 {
+            if let loaded = try transcriptStore.load(conversationID: "window-1") {
+                persistedContents = loaded.messages.map(\.content)
+                persistedToolIDs = loaded.toolCalls.map(\.id)
+                if persistedContents == ["Hello", "World"], persistedToolIDs == ["tool-1"] {
+                    break
+                }
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        #expect(persistedContents == ["Hello", "World"])
+        #expect(persistedToolIDs == ["tool-1"])
+
         let second = AgentConversationController(
             coordinator: coordinator,
             conversationID: "window-1",
