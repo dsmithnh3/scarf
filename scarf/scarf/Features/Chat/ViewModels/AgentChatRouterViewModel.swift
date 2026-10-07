@@ -83,12 +83,32 @@ final class AgentChatRouterViewModel {
                 return
             }
 
+            let backendID = project.preferredAgentID
+            let serverContext = context
+            let agentRuntime = runtime
             route = .agent(
                 project: project,
                 viewModel: AgentChatViewModel(
                     controller: controller,
-                    backendID: project.preferredAgentID,
-                    workingDirectory: URL(fileURLWithPath: project.rootPath)
+                    backendID: backendID,
+                    workingDirectory: URL(fileURLWithPath: project.rootPath),
+                    extensionCatalogLoader: {
+                        // Claude skills stay the empty stub. Skip the Hermes
+                        // home walk so a missing Hermes install cannot block
+                        // the sheet on Claude projects.
+                        if backendID == .hermes {
+                            return AgentExtensionCatalogs.makeCatalog(
+                                fromHermesHome: serverContext
+                            )
+                        }
+                        return AgentExtensionCatalogs.makeCatalog()
+                    },
+                    modelsLoader: {
+                        guard let backend = await agentRuntime.backend(for: project) else {
+                            return []
+                        }
+                        return (try? await backend.models()) ?? []
+                    }
                 )
             )
         }

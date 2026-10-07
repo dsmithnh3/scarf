@@ -121,6 +121,7 @@ private struct AgentProjectChatView: View {
 
     @Environment(AppCoordinator.self) private var coordinator
     @State private var selectedSlashHintIndex = 0
+    @State private var isExtensionsSheetPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,6 +145,16 @@ private struct AgentProjectChatView: View {
                 selectedSlashHintIndex = max(0, count - 1)
             }
         }
+        .sheet(isPresented: $isExtensionsSheetPresented) {
+            AgentExtensionsBrowserSheet(
+                presentation: viewModel.extensionBrowserPresentation,
+                isLoading: viewModel.isLoadingExtensions,
+                onDismiss: { isExtensionsSheetPresented = false }
+            )
+            .task {
+                await viewModel.loadExtensionsCatalog()
+            }
+        }
     }
 
     private var header: some View {
@@ -162,6 +173,29 @@ private struct AgentProjectChatView: View {
             }
 
             Spacer()
+
+            if let modelLabel = viewModel.modelBadgeLabel {
+                Text(modelLabel)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(ScarfColor.foregroundMuted)
+                    .padding(.horizontal, ScarfSpace.s2)
+                    .padding(.vertical, ScarfSpace.s1)
+                    .background(ScarfColor.backgroundSecondary, in: Capsule())
+                    .help("Models advertised by this backend (read-only)")
+                    .accessibilityLabel("Models: \(modelLabel)")
+            } else if viewModel.isLoadingModels {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+
+            Button {
+                isExtensionsSheetPresented = true
+            } label: {
+                Label("Extensions", systemImage: "puzzlepiece.extension")
+            }
+            .buttonStyle(.bordered)
+            .disabled(viewModel.isLoadingExtensions)
+            .help("Browse this backend's extension catalog (read-only)")
 
             if viewModel.state.isRunning {
                 ProgressView()

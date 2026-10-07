@@ -11,11 +11,16 @@ import ScarfCore
 @MainActor
 @Observable
 final class AgentChatViewModel {
+    typealias ExtensionCatalogLoader = @Sendable () async -> AgentExtensionCatalog
+    typealias ModelsLoader = @Sendable () async -> [AgentModel]
+
     private let controller: AgentConversationController
     private let backendID: AgentID
     private let workingDirectory: URL
     private let baseSlashRegistry: AgentSlashCommandRegistry
     private var slashHintPresenter: AgentSlashHintPresenter
+    private let extensionCatalogLoader: ExtensionCatalogLoader
+    private let modelsLoader: ModelsLoader
 
     private(set) var state = AgentConversationState()
     private(set) var isStarted = false
@@ -34,6 +39,20 @@ final class AgentChatViewModel {
         catalogIsEmpty: false
     )
 
+    /// Read-only extensions browser presentation. Empty until ``loadExtensionsCatalog()``.
+    private(set) var extensionBrowserPresentation = AgentExtensionBrowserPresenter.make(
+        catalog: AgentExtensionCatalog(),
+        backendID: .hermes,
+        capabilities: []
+    )
+    private(set) var isLoadingExtensions = false
+
+    /// Read-only models list from the active backend's ``AgentBackend/models()``.
+    /// Claude fills this from control initialize after session start; Hermes
+    /// fills it from the configured provider's Rich Chat catalog.
+    private(set) var availableModels: [AgentModel] = []
+    private(set) var isLoadingModels = false
+
     @ObservationIgnored
     private var stateTask: Task<Void, Never>?
 
@@ -41,7 +60,9 @@ final class AgentChatViewModel {
         controller: AgentConversationController,
         backendID: AgentID,
         workingDirectory: URL,
-        slashHintPresenter: AgentSlashHintPresenter? = nil
+        slashHintPresenter: AgentSlashHintPresenter? = nil,
+        extensionCatalogLoader: ExtensionCatalogLoader? = nil,
+        modelsLoader: ModelsLoader? = nil
     ) {
         self.controller = controller
         self.backendID = backendID
@@ -52,6 +73,15 @@ final class AgentChatViewModel {
         )
         self.baseSlashRegistry = presenter.registry
         self.slashHintPresenter = presenter
+        self.extensionCatalogLoader = extensionCatalogLoader ?? {
+            AgentExtensionCatalogs.makeCatalog()
+        }
+        self.modelsLoader = modelsLoader ?? { [] }
+        self.extensionBrowserPresentation = AgentExtensionBrowserPresenter.make(
+            catalog: AgentExtensionCatalog(),
+            backendID: backendID,
+            capabilities: AgentSlashHintPresenter.defaultCapabilities(for: backendID)
+        )
         observeState()
         refreshSlashHints()
     }
@@ -86,8 +116,45 @@ final class AgentChatViewModel {
                 )
             )
             isStarted = true
+            await refreshAvailableModels()
         } catch {
             startupError = String(describing: error)
+        }
+    }
+
+    /// Load the read-only extension catalog for the browse sheet.
+    func loadExtensionsCatalog() async {
+        guard !isLoadingExtensions else { return }
+        isLoadingExtensions = true
+        defer { isLoadingExtensions = false }
+
+        let catalog = await extensionCatalogLoader()
+        let capabilities = AgentSlashHintPresenter.defaultCapabilities(for: backendID)
+        extensionBrowserPresentation = AgentExtensionBrowserPresenter.make(
+            catalog: catalog,
+            backendID: backendID,
+            capabilities: capabilities
+        )
+    }
+
+    /// Refresh the read-only model badge from the backend's models() bridge.
+    func refreshAvailableModels() async {
+        guard !isLoadingModels else { return }
+        isLoadingModels = true
+        defer { isLoadingModels = false }
+        availableModels = await modelsLoader()
+    }
+
+    /// Display label for the read-only model badge. Prefers a single model
+    /// when the backend advertises exactly one; otherwise a count.
+    var modelBadgeLabel: String? {
+        switch availableModels.count {
+        case 0:
+            return nil
+        case 1:
+            return availableModels[0].displayName
+        default:
+            return "\(availableModels.count) models"
         }
     }
 

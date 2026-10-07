@@ -288,13 +288,14 @@ struct AgentProviderDiagnosticsTests {
         #expect(try await backend.models().isEmpty)
     }
 
-    @Test("Hermes models() stays empty; Hermes catalog UI remains authoritative")
-    func hermesModelsDiscoveryBlocked() async throws {
+    @Test("Hermes models() stays empty when no configured provider is resolved")
+    func hermesModelsEmptyWithoutConfiguredProvider() async throws {
         let backend = HermesBackend(
             context: .local,
             executableResolver: { "/opt/homebrew/bin/hermes" },
             installationProbe: { .available(version: "3.5-test") },
-            credentialProbe: { true }
+            credentialProbe: { true },
+            configuredProviderResolver: { nil }
         )
         #expect(try await backend.models().isEmpty)
     }

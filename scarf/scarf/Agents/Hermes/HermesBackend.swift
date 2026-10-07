@@ -12,6 +12,13 @@ actor HermesBackend: SessionScopedAgentBackend {
     /// Same verdict as chat's credential preflight (`HermesFileService.hasAnyAICredential`).
     typealias CredentialProbe = @Sendable () -> Bool
     typealias ConversationHistoryLoader = @Sendable (ServerContext, String) async throws -> [AgentMessage]
+    /// Configured `model.provider` from Hermes config. Nil / empty / `unknown`
+    /// means models() returns [].
+    typealias ConfiguredProviderResolver = @Sendable () -> String?
+    /// models.dev / overlay catalog rows for one provider id.
+    typealias CatalogModelsLoader = @Sendable (String) async -> [AgentModel]
+    /// Nous Portal rows already mapped into ``AgentModel`` (`nous:<id>`).
+    typealias NousModelsLoader = @Sendable () async -> [AgentModel]
 
     nonisolated let id: AgentID = .hermes
     nonisolated let displayName = "Hermes"
@@ -40,6 +47,9 @@ actor HermesBackend: SessionScopedAgentBackend {
     private let installationProbe: InstallationProbe
     private let credentialProbe: CredentialProbe
     private let conversationHistoryLoader: ConversationHistoryLoader
+    private let configuredProviderResolver: ConfiguredProviderResolver
+    private let catalogModelsLoader: CatalogModelsLoader
+    private let nousModelsLoader: NousModelsLoader
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var clients: [String: ACPClient] = [:]
@@ -50,7 +60,10 @@ actor HermesBackend: SessionScopedAgentBackend {
         executableResolver: ExecutableResolver? = nil,
         installationProbe: InstallationProbe? = nil,
         credentialProbe: CredentialProbe? = nil,
-        conversationHistoryLoader: ConversationHistoryLoader? = nil
+        conversationHistoryLoader: ConversationHistoryLoader? = nil,
+        configuredProviderResolver: ConfiguredProviderResolver? = nil,
+        catalogModelsLoader: CatalogModelsLoader? = nil,
+        nousModelsLoader: NousModelsLoader? = nil
     ) {
         self.context = context
         self.conversationHistoryLoader = conversationHistoryLoader ?? Self.defaultConversationHistoryLoader
@@ -80,6 +93,13 @@ actor HermesBackend: SessionScopedAgentBackend {
         self.credentialProbe = credentialProbe ?? {
             HermesFileService(context: context).hasAnyAICredential()
         }
+
+        self.configuredProviderResolver = configuredProviderResolver
+            ?? Self.makeConfiguredProviderResolver(context: context)
+        self.catalogModelsLoader = catalogModelsLoader
+            ?? Self.makeCatalogModelsLoader(context: context)
+        self.nousModelsLoader = nousModelsLoader
+            ?? Self.makeNousModelsLoader(context: context)
     }
 
     nonisolated private static func makeExecutableResolver(
@@ -87,6 +107,49 @@ actor HermesBackend: SessionScopedAgentBackend {
     ) -> ExecutableResolver {
         {
             context.paths.hermesBinaryIfInstalled
+        }
+    }
+
+    nonisolated private static func makeConfiguredProviderResolver(
+        context: ServerContext
+    ) -> ConfiguredProviderResolver {
+        {
+            guard let yaml = HermesConfigReader.readRawConfig(context: context) else {
+                return nil
+            }
+            let provider = HermesConfig(yaml: yaml).provider
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !provider.isEmpty, provider.lowercased() != "unknown" else {
+                return nil
+            }
+            return provider
+        }
+    }
+
+    nonisolated private static func makeCatalogModelsLoader(
+        context: ServerContext
+    ) -> CatalogModelsLoader {
+        { provider in
+            ModelCatalogService(context: context)
+                .loadModels(for: provider)
+                .map { AgentModel(id: $0.id, displayName: $0.modelName) }
+        }
+    }
+
+    nonisolated private static func makeNousModelsLoader(
+        context: ServerContext
+    ) -> NousModelsLoader {
+        {
+            let result = await NousModelCatalogService(context: context)
+                .loadModels(forceRefresh: false)
+            let models: [NousModel]
+            switch result {
+            case .fresh(let list, _), .cache(let list, _, _), .fallback(let list, _):
+                models = list
+            }
+            return NousModelCatalogService.agenticModels(models).map {
+                AgentModel(id: "nous:\($0.id)", displayName: $0.id)
+            }
         }
     }
 
@@ -130,11 +193,17 @@ actor HermesBackend: SessionScopedAgentBackend {
     }
 
     nonisolated func models() async throws -> [AgentModel] {
-        // BLOCKED for multi-agent: Rich Chat ModelCatalogService /
-        // NousModelCatalogService remain authoritative. Do not mirror or invent
-        // a parallel list here until a verified AgentBackend discovery bridge
-        // exists.
-        []
+        // Thin bridge over the Rich Chat catalogs for the configured
+        // `model.provider` only. Do not invent a parallel list; Claude models
+        // stay on control initialize.
+        guard let raw = configuredProviderResolver() else { return [] }
+        let provider = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !provider.isEmpty, provider.lowercased() != "unknown" else { return [] }
+
+        if provider.lowercased() == "nous" {
+            return await nousModelsLoader()
+        }
+        return await catalogModelsLoader(provider)
     }
 
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
