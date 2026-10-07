@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ScarfCore
 @testable import scarf
 
 @Suite("Claude Code control protocol")
