@@ -68,7 +68,7 @@ struct AgentChatViewModelModelSelectionTests {
             controller: controller,
             backendID: .claudeCode,
             workingDirectory: cwd,
-            modelsLoader: { try await backend.models() }
+            modelsLoader: { (try? await backend.models()) ?? [] }
         )
 
         #expect(viewModel.supportsModelPicker)
@@ -116,7 +116,7 @@ struct AgentChatViewModelModelSelectionTests {
             controller: controller,
             backendID: .claudeCode,
             workingDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true),
-            modelsLoader: { try await backend.models() }
+            modelsLoader: { (try? await backend.models()) ?? [] }
         )
 
         await viewModel.start()
