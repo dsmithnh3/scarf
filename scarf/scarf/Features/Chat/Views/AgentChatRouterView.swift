@@ -174,7 +174,32 @@ private struct AgentProjectChatView: View {
 
             Spacer()
 
-            if let modelLabel = viewModel.modelBadgeLabel {
+            if viewModel.supportsModelPicker, !viewModel.availableModels.isEmpty {
+                Menu {
+                    ForEach(viewModel.availableModels) { model in
+                        Button {
+                            Task { await viewModel.selectModel(id: model.id) }
+                        } label: {
+                            if viewModel.selectedModelID == model.id {
+                                Label(model.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(model.displayName)
+                            }
+                        }
+                    }
+                } label: {
+                    Text(viewModel.modelBadgeLabel ?? "Model")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(ScarfColor.foregroundMuted)
+                        .padding(.horizontal, ScarfSpace.s2)
+                        .padding(.vertical, ScarfSpace.s1)
+                        .background(ScarfColor.backgroundSecondary, in: Capsule())
+                }
+                .menuStyle(.borderlessButton)
+                .disabled(viewModel.isChangingModel || viewModel.isLoadingModels)
+                .help("Restart this Claude session with the selected model")
+                .accessibilityLabel("Model: \(viewModel.modelBadgeLabel ?? "default")")
+            } else if let modelLabel = viewModel.modelBadgeLabel {
                 Text(modelLabel)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(ScarfColor.foregroundMuted)
@@ -221,6 +246,26 @@ private struct AgentProjectChatView: View {
 
                 if let error = viewModel.state.error {
                     AgentInlineError(title: "Agent error", message: error.message)
+                }
+
+                if let plan = AgentPlanCalloutPresenter.planText(from: viewModel.state) {
+                    VStack(alignment: .leading, spacing: ScarfSpace.s2) {
+                        Label("Plan", systemImage: "list.bullet.rectangle")
+                            .scarfStyle(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(ScarfColor.accent)
+                        Text(plan)
+                            .font(ScarfFont.mono)
+                            .foregroundStyle(ScarfColor.foregroundMuted)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(ScarfSpace.s3)
+                    .background(ScarfColor.backgroundSecondary, in: RoundedRectangle(cornerRadius: ScarfRadius.xl))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ScarfRadius.xl)
+                            .strokeBorder(ScarfColor.borderStrong, lineWidth: 0.5)
+                    )
                 }
 
                 ForEach(viewModel.state.messages) { message in

@@ -60,6 +60,9 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     private var pendingPermissions: [String: PendingPermission] = [:]
     /// Last initialize `models` list. Empty until a fixture-shaped success payload arrives.
     private var discoveredModels: [AgentModel] = []
+    /// Last initialize `agents` mapped to Claude skill descriptors. Empty until
+    /// a fixture-shaped success payload arrives. Static catalog stub stays [].
+    private var discoveredSkillExtensions: [AgentExtensionDescriptor] = []
 
     init(
         executableResolver: @escaping ExecutableResolver = {
@@ -105,6 +108,10 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
 
     nonisolated func models() async throws -> [AgentModel] {
         await discoveredModels
+    }
+
+    nonisolated func discoveredExtensions() async -> [AgentExtensionDescriptor] {
+        await discoveredSkillExtensions
     }
 
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
@@ -357,6 +364,7 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
                                 }
                             )
                             discoveredModels = models
+                            discoveredSkillExtensions = Self.skillDescriptors(from: result.agents)
                             yield(.availableCommandsUpdated(commands), sessionID: sessionID)
                         } else if !control.isSuccess {
                             yield(.error(AgentError(
@@ -487,6 +495,28 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
             workingDirectory: reported.workingDirectory,
             metadata: metadata
         ))
+    }
+
+    /// Map initialize agents (CLI 2.1.289: name / description / model) into
+    /// Claude skill catalog rows. Does not scrape disk; empty input → [].
+    nonisolated static func skillDescriptors(
+        from agents: [ClaudeInitializeAgent]
+    ) -> [AgentExtensionDescriptor] {
+        agents.map { agent in
+            var description = agent.description
+            if let model = agent.model, !model.isEmpty {
+                let suffix = "model: \(model)"
+                description = description.isEmpty ? suffix : "\(description) (\(suffix))"
+            }
+            return AgentExtensionDescriptor(
+                name: agent.name,
+                description: description,
+                kind: .claudeCodeSkill,
+                source: .claudeCode,
+                backendScope: .backends([.claudeCode]),
+                availability: .available
+            )
+        }
     }
 
     nonisolated private static func defaultInstallationProbe(

@@ -41,6 +41,12 @@ public protocol AgentBackend: Sendable {
     func authHealth() async -> AgentAuthHealth
 
     func models() async throws -> [AgentModel]
+
+    /// Live extension rows discovered after backend handshake (for example
+    /// Claude control `initialize` agents). Default is empty — do not invent
+    /// skills or plugins when the backend has no verified source.
+    func discoveredExtensions() async -> [AgentExtensionDescriptor]
+
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession
     func resumeSession(_ session: AgentSession) async throws -> AgentSession
     func send(_ message: AgentMessage, in session: AgentSession) async throws
@@ -65,6 +71,9 @@ extension AgentBackend {
 
     /// Default: no verified auth probe (stay silent in diagnostics).
     public func authHealth() async -> AgentAuthHealth { .notProbed }
+
+    /// Default: no live extension discovery.
+    public func discoveredExtensions() async -> [AgentExtensionDescriptor] { [] }
 
     /// Default: no structured history. Concrete backends override when a real
     /// protocol source exists.

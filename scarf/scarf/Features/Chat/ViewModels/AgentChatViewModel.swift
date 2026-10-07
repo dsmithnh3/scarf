@@ -47,14 +47,21 @@ final class AgentChatViewModel {
     )
     private(set) var isLoadingExtensions = false
 
-    /// Read-only models list from the active backend's ``AgentBackend/models()``.
+    /// Models list from the active backend's ``AgentBackend/models()``.
     /// Claude fills this from control initialize after session start; Hermes
     /// fills it from the configured provider's Rich Chat catalog.
     private(set) var availableModels: [AgentModel] = []
     private(set) var isLoadingModels = false
+    /// Claude-only launch model. Nil means CLI default (no `--model` flag).
+    private(set) var selectedModelID: String?
+    private(set) var isChangingModel = false
 
     @ObservationIgnored
     private var stateTask: Task<Void, Never>?
+    /// Tracks Claude initialize/commands_changed so models + skills refresh
+    /// after the async handshake writes discovery caches.
+    @ObservationIgnored
+    private var lastDiscoveredCommandSignature: String?
 
     init(
         controller: AgentConversationController,
@@ -104,6 +111,12 @@ final class AgentChatViewModel {
         AgentPermissionPresenter.presentation(from: state)
     }
 
+    /// Claude exposes a launch-time model menu. Hermes stays badge-only —
+    /// no ACP `set_model` in this slice.
+    var supportsModelPicker: Bool {
+        backendID == .claudeCode
+    }
+
     func start() async {
         guard !isStarted else { return }
         startupError = nil
@@ -112,11 +125,15 @@ final class AgentChatViewModel {
             _ = try await controller.startOrRestorePersistedSession(
                 backendID: backendID,
                 configuration: AgentSessionConfiguration(
-                    workingDirectory: workingDirectory
+                    workingDirectory: workingDirectory,
+                    modelID: selectedModelID
                 )
             )
             isStarted = true
             await refreshAvailableModels()
+            if backendID == .claudeCode {
+                await loadExtensionsCatalog()
+            }
         } catch {
             startupError = String(describing: error)
         }
@@ -137,7 +154,7 @@ final class AgentChatViewModel {
         )
     }
 
-    /// Refresh the read-only model badge from the backend's models() bridge.
+    /// Refresh models from the backend's models() bridge.
     func refreshAvailableModels() async {
         guard !isLoadingModels else { return }
         isLoadingModels = true
@@ -145,9 +162,29 @@ final class AgentChatViewModel {
         availableModels = await modelsLoader()
     }
 
-    /// Display label for the read-only model badge. Prefers a single model
-    /// when the backend advertises exactly one; otherwise a count.
+    /// Claude: close and recreate the session with `--model`. Same id is a
+    /// no-op. Hermes callers must not use this path (`supportsModelPicker`).
+    func selectModel(id: String) async {
+        guard supportsModelPicker else { return }
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != selectedModelID else { return }
+        guard !isChangingModel else { return }
+
+        isChangingModel = true
+        defer { isChangingModel = false }
+
+        selectedModelID = trimmed
+        await close()
+        await start()
+    }
+
+    /// Badge / menu label. Selected Claude model wins; otherwise a single
+    /// advertised name, a count, or nil while empty.
     var modelBadgeLabel: String? {
+        if let selectedModelID,
+           let match = availableModels.first(where: { $0.id == selectedModelID }) {
+            return match.displayName
+        }
         switch availableModels.count {
         case 0:
             return nil
@@ -231,7 +268,21 @@ final class AgentChatViewModel {
                 guard !Task.isCancelled else { break }
                 self?.state = snapshot
                 self?.applyDiscoveredSlashCommands(from: snapshot)
+                self?.refreshDiscoveryAfterClaudeHandshake(from: snapshot)
             }
+        }
+    }
+
+    /// Claude populate models()/discoveredExtensions after initialize on a
+    /// background consume loop. Re-read them when slash discovery updates.
+    private func refreshDiscoveryAfterClaudeHandshake(from snapshot: AgentConversationState) {
+        guard backendID == .claudeCode else { return }
+        let signature = snapshot.discoveredSlashCommands.map(\.name).joined(separator: "\u{1e}")
+        guard signature != lastDiscoveredCommandSignature else { return }
+        lastDiscoveredCommandSignature = signature
+        Task { [weak self] in
+            await self?.refreshAvailableModels()
+            await self?.loadExtensionsCatalog()
         }
     }
 }

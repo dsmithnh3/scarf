@@ -48,9 +48,19 @@ struct ClaudeInitializeAccount: Sendable, Equatable {
     var apiProvider: String?
 }
 
+/// One row from initialize `agents[]` (CLI 2.1.289 live shape).
+///
+/// Proven fields: `name`, `description`, optional `model`. Unknown keys ignored.
+struct ClaudeInitializeAgent: Sendable, Equatable {
+    let name: String
+    let description: String
+    let model: String?
+}
+
 struct ClaudeInitializeResult: Sendable, Equatable {
     var models: [ClaudeInitializeModel]
     var commands: [ClaudeInitializeCommand]
+    var agents: [ClaudeInitializeAgent]
     var account: ClaudeInitializeAccount
 }
 
@@ -84,15 +94,18 @@ enum ClaudeControlProtocol {
 
         let hasModels = payload["models"] != nil
         let hasCommands = payload["commands"] != nil
-        guard hasModels || hasCommands else { return nil }
+        let hasAgents = payload["agents"] != nil
+        guard hasModels || hasCommands || hasAgents else { return nil }
 
         guard let models = decodeModels(payload["models"]),
-              let commands = decodeCommands(payload["commands"])
+              let commands = decodeCommands(payload["commands"]),
+              let agents = decodeAgents(payload["agents"])
         else { return nil }
 
         return ClaudeInitializeResult(
             models: models,
             commands: commands,
+            agents: agents,
             account: decodeAccount(payload["account"])
         )
     }
@@ -228,6 +241,22 @@ enum ClaudeControlProtocol {
             ))
         }
         return commands
+    }
+
+    private static func decodeAgents(_ value: Any?) -> [ClaudeInitializeAgent]? {
+        if value == nil { return [] }
+        guard let rows = value as? [[String: Any]] else { return nil }
+        var agents: [ClaudeInitializeAgent] = []
+        for row in rows {
+            guard let name = row["name"] as? String, !name.isEmpty else { continue }
+            let model = (row["model"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            agents.append(ClaudeInitializeAgent(
+                name: name,
+                description: row["description"] as? String ?? "",
+                model: model
+            ))
+        }
+        return agents
     }
 
     private static func decodeAccount(_ value: Any?) -> ClaudeInitializeAccount {

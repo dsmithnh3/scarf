@@ -16,10 +16,10 @@ struct ClaudeControlProtocolTests {
         #expect(request.count == 1)
     }
 
-    @Test("initialize success payload decodes models, commands, and non-secret account fields")
+    @Test("initialize success payload decodes models, commands, agents, and non-secret account fields")
     func initializeSuccessDecoding() throws {
         let line = """
-        {"type":"control_response","response":{"subtype":"success","request_id":"req_init","response":{"models":[{"value":"default","displayName":"Default (recommended)","resolvedModel":"claude-opus-5","description":"Example"}],"commands":[{"name":"help","description":"Show help","argumentHint":"","aliases":["h"],"builtin":true}],"account":{"email":"person@example.com","tokenSource":"claude.ai","apiKeySource":"ANTHROPIC_API_KEY","apiProvider":"firstParty","subscriptionType":"pro"}}}}
+        {"type":"control_response","response":{"subtype":"success","request_id":"req_init","response":{"models":[{"value":"default","displayName":"Default (recommended)","resolvedModel":"claude-opus-5","description":"Example"}],"commands":[{"name":"help","description":"Show help","argumentHint":"","aliases":["h"],"builtin":true}],"agents":[{"name":"agent-writer","description":"Meta-agent for designing agents","model":"sonnet","unknown_field":true}],"account":{"email":"person@example.com","tokenSource":"claude.ai","apiKeySource":"ANTHROPIC_API_KEY","apiProvider":"firstParty","subscriptionType":"pro"}}}}
         """
         let decoded = try ClaudeControlProtocol.decodeInitializeResult(line)
         let result = try #require(decoded)
@@ -35,10 +35,41 @@ struct ClaudeControlProtocolTests {
                 isBuiltin: true
             )
         ])
+        #expect(result.agents == [
+            ClaudeInitializeAgent(
+                name: "agent-writer",
+                description: "Meta-agent for designing agents",
+                model: "sonnet"
+            )
+        ])
         #expect(result.account.tokenSource == "claude.ai")
         #expect(result.account.apiKeySource == "ANTHROPIC_API_KEY")
         #expect(result.account.apiProvider == "firstParty")
         #expect(result.account.subscriptionType == "pro")
+    }
+
+    @Test("initialize agents map to Claude skill catalog descriptors")
+    func initializeAgentsMapToClaudeSkills() {
+        let descriptors = ClaudeCodeBackend.skillDescriptors(from: [
+            ClaudeInitializeAgent(name: "agent-writer", description: "Meta-agent", model: "sonnet"),
+            ClaudeInitializeAgent(name: "docs", description: "Docs helper", model: nil),
+        ])
+        #expect(descriptors.map(\.id) == [
+            "claudeCodeSkill:agent-writer",
+            "claudeCodeSkill:docs",
+        ])
+        #expect(descriptors.allSatisfy { $0.kind == .claudeCodeSkill && $0.source == .claudeCode })
+        #expect(descriptors[0].description.contains("model: sonnet"))
+        #expect(AgentExtensionCatalogs.claudeCodeSkills.isEmpty)
+
+        let presentation = AgentExtensionBrowserPresenter.make(
+            catalog: AgentExtensionCatalog(entries: descriptors),
+            backendID: .claudeCode,
+            capabilities: AgentSlashHintPresenter.defaultCapabilities(for: .claudeCode)
+        )
+        #expect(!presentation.isEmpty)
+        #expect(presentation.sections.first { $0.kind == .claudeCodeSkill }?.rows.map(\.name)
+            == ["agent-writer", "docs"])
     }
 
     @Test("interrupt success is not an initialize result")

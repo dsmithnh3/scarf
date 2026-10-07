@@ -10,12 +10,15 @@ enum ClaudeStreamDecoderError: Error, Equatable {
 /// Claude Code release does not crash Scarf merely because it emits more data.
 actor ClaudeStreamDecoder {
     private struct ToolMetadata: Sendable {
-        let name: String
-        let command: String?
-        let path: String?
+        var name: String
+        var command: String?
+        var path: String?
+        var partialJSON: String
     }
 
     private var tools: [String: ToolMetadata] = [:]
+    /// Maps stream `content_block` index → tool id for `input_json_delta`.
+    private var streamIndexToToolID: [Int: String] = [:]
 
     func decode(line: String) throws -> [AgentEvent] {
         guard let data = line.data(using: .utf8),
@@ -39,6 +42,8 @@ actor ClaudeStreamDecoder {
             return decodeUser(json)
         case "result":
             return decodeResult(json)
+        case "rate_limit_event":
+            return decodeRateLimit(json)
         default:
             return []
         }
@@ -85,8 +90,55 @@ actor ClaudeStreamDecoder {
 
     private func decodeStreamEvent(_ json: [String: Any]) -> [AgentEvent] {
         guard let event = json["event"] as? [String: Any],
-              event["type"] as? String == "content_block_delta",
-              let delta = event["delta"] as? [String: Any],
+              let eventType = event["type"] as? String
+        else { return [] }
+
+        switch eventType {
+        case "content_block_start":
+            return decodeContentBlockStart(event)
+        case "content_block_delta":
+            return decodeContentBlockDelta(event)
+        case "content_block_stop":
+            return []
+        default:
+            return []
+        }
+    }
+
+    private func decodeContentBlockStart(_ event: [String: Any]) -> [AgentEvent] {
+        guard let block = event["content_block"] as? [String: Any],
+              block["type"] as? String == "tool_use",
+              let toolID = block["id"] as? String,
+              let name = block["name"] as? String
+        else { return [] }
+
+        let input = block["input"] as? [String: Any] ?? [:]
+        let inputJSON = jsonString(input) ?? "{}"
+        let command = input["command"] as? String
+        let path = (input["file_path"] as? String) ?? (input["path"] as? String)
+        tools[toolID] = ToolMetadata(
+            name: name,
+            command: command,
+            path: path,
+            partialJSON: inputJSON == "{}" ? "" : inputJSON
+        )
+        if let index = event["index"] as? Int {
+            streamIndexToToolID[index] = toolID
+        } else if let index = event["index"] as? NSNumber {
+            streamIndexToToolID[index.intValue] = toolID
+        }
+
+        return [.toolStarted(AgentToolCall(
+            id: toolID,
+            title: toolTitle(name: name, input: input),
+            kind: name,
+            status: .running,
+            input: inputJSON
+        ))]
+    }
+
+    private func decodeContentBlockDelta(_ event: [String: Any]) -> [AgentEvent] {
+        guard let delta = event["delta"] as? [String: Any],
               let type = delta["type"] as? String
         else { return [] }
 
@@ -97,9 +149,63 @@ actor ClaudeStreamDecoder {
         case "thinking_delta":
             guard let text = delta["thinking"] as? String, !text.isEmpty else { return [] }
             return [.reasoningDelta(text)]
+        case "input_json_delta":
+            return decodeInputJSONDelta(event: event, delta: delta)
         default:
             return []
         }
+    }
+
+    private func decodeInputJSONDelta(event: [String: Any], delta: [String: Any]) -> [AgentEvent] {
+        let index: Int?
+        if let value = event["index"] as? Int {
+            index = value
+        } else if let value = event["index"] as? NSNumber {
+            index = value.intValue
+        } else {
+            index = nil
+        }
+        guard let index,
+              let toolID = streamIndexToToolID[index],
+              var metadata = tools[toolID]
+        else { return [] }
+
+        let fragment = (delta["partial_json"] as? String) ?? ""
+        metadata.partialJSON += fragment
+        let parsed = parseJSONObject(metadata.partialJSON)
+        if let parsed {
+            metadata.command = parsed["command"] as? String
+            metadata.path = (parsed["file_path"] as? String) ?? (parsed["path"] as? String)
+        }
+        tools[toolID] = metadata
+
+        let inputJSON = parsed.flatMap(jsonString) ?? metadata.partialJSON
+        let title: String
+        if let parsed {
+            title = toolTitle(name: metadata.name, input: parsed)
+        } else {
+            title = metadata.name
+        }
+
+        return [.toolUpdated(AgentToolCall(
+            id: toolID,
+            title: title,
+            kind: metadata.name,
+            status: .running,
+            input: inputJSON
+        ))]
+    }
+
+    private func decodeRateLimit(_ json: [String: Any]) -> [AgentEvent] {
+        let trimmed = (json["message"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail: String
+        if let trimmed, !trimmed.isEmpty {
+            detail = trimmed
+        } else {
+            detail = "Claude Code reported a rate limit"
+        }
+        return [.error(AgentError(code: "claude.rate-limit", message: detail, isRecoverable: true))]
     }
 
     private func decodeAssistant(_ json: [String: Any]) -> [AgentEvent] {
@@ -117,7 +223,13 @@ actor ClaudeStreamDecoder {
             let inputJSON = jsonString(input)
             let command = input["command"] as? String
             let path = (input["file_path"] as? String) ?? (input["path"] as? String)
-            tools[toolID] = ToolMetadata(name: name, command: command, path: path)
+            let priorPartial = tools[toolID]?.partialJSON ?? ""
+            tools[toolID] = ToolMetadata(
+                name: name,
+                command: command,
+                path: path,
+                partialJSON: inputJSON ?? priorPartial
+            )
 
             events.append(.toolStarted(AgentToolCall(
                 id: toolID,
@@ -223,6 +335,13 @@ actor ClaudeStreamDecoder {
               let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    private func parseJSONObject(_ raw: String) -> [String: Any]? {
+        guard let data = raw.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return object
     }
 
     private func contentText(_ value: Any?) -> String? {

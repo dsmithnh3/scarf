@@ -93,15 +93,21 @@ final class AgentChatRouterViewModel {
                     backendID: backendID,
                     workingDirectory: URL(fileURLWithPath: project.rootPath),
                     extensionCatalogLoader: {
-                        // Claude skills stay the empty stub. Skip the Hermes
-                        // home walk so a missing Hermes install cannot block
-                        // the sheet on Claude projects.
+                        // Hermes walks the installed home. Claude merges live
+                        // initialize `agents` into the empty static skills stub
+                        // — never scrape ~/.claude.
                         if backendID == .hermes {
                             return AgentExtensionCatalogs.makeCatalog(
                                 fromHermesHome: serverContext
                             )
                         }
-                        return AgentExtensionCatalogs.makeCatalog()
+                        let base = AgentExtensionCatalogs.makeCatalog()
+                        guard let backend = await agentRuntime.backend(for: project) else {
+                            return base
+                        }
+                        let live = await backend.discoveredExtensions()
+                        guard !live.isEmpty else { return base }
+                        return AgentExtensionCatalog(entries: base.entries + live)
                     },
                     modelsLoader: {
                         guard let backend = await agentRuntime.backend(for: project) else {

@@ -807,11 +807,6 @@ Updated 2026-10-06: Phases 1–5 foundations are largely GREEN on `cursor/sessio
 
 **`macOS-CLUI-CC` was read locally on 2026-10-06.** Ranked steal/adapt/skip (order unchanged): `documents/research/2026-10-06-clui-scarf-production-transfer.md`. Installed CLI: 2.1.289.
 
-**Done on this PR (`6ec474d7`, CI [37484422128](https://github.com/dsmithnh3/scarf/actions/runs/37484422128)):** Claude `auth status` → `AgentAuthHealth`; control `initialize` + handshake; Claude `models()`; slash from initialize + `commands_changed`; Claude child env drops harvested API keys.
+**Done on this PR:** Claude auth/initialize/slash (`6ec474d7`); read-only extensions browser + Hermes `models()` bridge (`f225304c`); Claude model Menu (restart with `--model`), stream-decoder gaps (`input_json_delta`, rate limit, `ExitPlanMode` plan callout), and initialize `agents` → Claude skills.
 
-**Do next:**
-
-1. Scarf-native read-only extensions browser UI (sheet over `AgentExtensionCatalog`; no CLUI toggles);
-2. Thin Hermes `models()` over `ModelCatalogService` / `NousModelCatalogService` for the configured provider (read-only badge; no ACP `set_model`).
-
-**Cite only, later:** `ClaudeEventNormalizer` gaps vs `ClaudeStreamDecoder`. **Skip:** Opal shell, second coordinator, native agent loops, hard-coded opus/sonnet/haiku, Claude JSONL history transplant. Codex stays later.
+**Do next / still deferred:** Hermes ACP `session/set_model`; Claude structured history (blocked — no verified source); Codex; native loops. **Skip:** Opal shell, second coordinator, hard-coded opus/sonnet/haiku, Claude JSONL history transplant, OAuth / Keychain parsers.
