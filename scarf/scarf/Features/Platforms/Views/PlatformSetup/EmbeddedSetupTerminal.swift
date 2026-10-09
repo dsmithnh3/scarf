@@ -191,8 +191,8 @@ final class EmbeddedSetupTerminalController {
         func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
         func processTerminated(source: TerminalView, exitCode: Int32?) {
-            let terminal = source.getTerminal()
-            terminal.feed(text: "\r\n[Process exited with code \(exitCode ?? -1)]\r\n")
+            // SwiftTerm 1.99+: feed via TerminalView directly (getTerminal() removed).
+            source.feed(text: "\r\n[Process exited with code \(exitCode ?? -1)]\r\n")
             let code = exitCode
             DispatchQueue.main.async { self.onTerminated(code) }
         }
