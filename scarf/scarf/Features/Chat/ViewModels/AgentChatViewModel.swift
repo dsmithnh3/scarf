@@ -97,6 +97,11 @@ final class AgentChatViewModel {
     /// Cleared at the start of every `send(_:)`.
     private(set) var idleSlashNotice: String?
 
+    /// Claude-only restore notice: Claude returns no structured history, so
+    /// Scarf durable transcript (or an empty chat) is what the user sees.
+    /// Nil for Hermes and for Claude before the first successful start.
+    private(set) var historyRestoreNotice: String?
+
     /// Most recent non-fatal action failure (model switch, approval-mode
     /// switch) for UI surfacing beyond ``AgentConversationState/error``,
     /// which only covers controller-originated failures.
@@ -229,8 +234,6 @@ final class AgentChatViewModel {
 
     /// Claude always exposes a launch-time model menu. Hermes exposes the
     /// picker API when catalog models are non-empty (live ACP `set_model`).
-    /// Hermes projects still route to legacy `ChatView` today — this path is
-    /// adapter prep for a future strangler cutover.
     var supportsModelPicker: Bool {
         switch backendID {
         case .claudeCode:
@@ -245,6 +248,7 @@ final class AgentChatViewModel {
     func start() async {
         guard !isStarted else { return }
         startupError = nil
+        historyRestoreNotice = nil
 
         // Recoverable preflight, mirrors legacy `ChatView`'s
         // `missingCredentials` banner: a probe that finds nothing still lets
@@ -276,13 +280,49 @@ final class AgentChatViewModel {
                 await applyAutoAcceptEditsIfNeeded()
             }
 
-            await refreshAvailableModels()
             if backendID == .claudeCode {
+                historyRestoreNotice = Self.claudeHistoryRestoreNotice(
+                    messageCount: state.messages.count
+                )
                 await loadExtensionsCatalog()
             }
+
+            await refreshAvailableModels()
         } catch {
-            startupError = String(describing: error)
+            startupError = Self.userFacingErrorMessage(error)
         }
+    }
+
+    /// Retry a failed start (install/auth/process). No-op when already started.
+    func retryStart() async {
+        guard !isStarted else { return }
+        await start()
+    }
+
+    /// Clear a non-fatal action error the user has dismissed.
+    func dismissLastActionError() {
+        lastActionError = nil
+    }
+
+    /// Claude has no structured history API — explain Scarf-preferring restore.
+    static func claudeHistoryRestoreNotice(messageCount: Int) -> String {
+        if messageCount > 0 {
+            return "Showing Scarf's saved transcript. Claude Code does not expose structured session history yet — Scarf never scrapes Claude's session files."
+        }
+        return "No prior Scarf transcript for this conversation. Claude Code does not expose structured session history yet."
+    }
+
+    /// Prefer `AgentError.message` over Swift's noisy `Error` dump.
+    static func userFacingErrorMessage(_ error: Error) -> String {
+        if let agentError = error as? AgentError {
+            switch agentError.code {
+            case "claude.not-installed":
+                return "Claude Code CLI not found. Install the Claude CLI, then run `claude login` in Terminal. Scarf does not manage Claude's sign-in."
+            default:
+                return agentError.message
+            }
+        }
+        return String(describing: error)
     }
 
     /// Resolve and apply this project's bound model preset to the fresh
@@ -423,7 +463,7 @@ final class AgentChatViewModel {
                 // doesn't have to know which state object a given backend
                 // reports failures on.
                 selectedModelID = previous
-                lastActionError = String(describing: error)
+                lastActionError = Self.userFacingErrorMessage(error)
             }
         default:
             return
@@ -446,7 +486,7 @@ final class AgentChatViewModel {
             lastActionError = nil
         } catch {
             activeApprovalMode = previous
-            lastActionError = String(describing: error)
+            lastActionError = Self.userFacingErrorMessage(error)
         }
     }
 

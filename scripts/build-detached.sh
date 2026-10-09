@@ -27,9 +27,13 @@
 #   * SPM checkout auto-repair after an interrupted build (one wipe-and-retry).
 #
 # Optional env overrides (not needed for normal use):
-#   BUILD_DETACHED_CONFIG   Release | Debug   (default: Release)
+#   BUILD_DETACHED_CONFIG   Release | Debug   (default: Debug — faster dogfood;
+#                         Release may hit Swift 6 concurrency issues in Claude paths)
 #   BUILD_DETACHED_DERIVED  isolated DerivedData path
 #   BUILD_DETACHED_APP      decoupled install path
+#   BUILD_DETACHED_SIGNED=1 use project signing + -allowProvisioningUpdates
+#                           (default: unsigned local dogfood)
+#   EXTRA_XCODEBUILD_ARGS   extra args forwarded into the build() call
 set -euo pipefail
 
 # ============================ CONFIG (edit per project) ============================
@@ -53,7 +57,7 @@ for arg in "$@"; do
   [ "$arg" = "--keep-running" ] && KEEP_RUNNING=1
 done
 
-CONFIG="${BUILD_DETACHED_CONFIG:-Release}"
+CONFIG="${BUILD_DETACHED_CONFIG:-Debug}"
 DERIVED="${BUILD_DETACHED_DERIVED:-/tmp/${APP_PRODUCT}-build-detached}"
 SPM="${BUILD_DETACHED_SPM:-/tmp/${APP_PRODUCT}-build-detached-spm}"
 INSTALL_PATH="${BUILD_DETACHED_APP:-/Applications/${APP_PRODUCT}-dev.app}"

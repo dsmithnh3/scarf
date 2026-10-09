@@ -1,16 +1,24 @@
 import Foundation
 
-/// Experimental opt-in for routing Hermes project chats through `AgentChat`
-/// instead of legacy `ChatView`.
+/// Routes Hermes project chats through `AgentChat` instead of legacy `ChatView`.
 ///
-/// Default is **off** — ChatView remains the production Hermes path until a
-/// separate default-flip task after soak. When on, Hermes projects use the same
-/// `AgentRuntime` / `HermesBackend` wiring as Claude-preferred projects.
+/// Default is **on** after the production-B soak. Users can turn the flag off
+/// in Settings → Agent Backends to keep the ChatView escape hatch. When the
+/// key is absent, Scarf treats AgentChat as the Hermes path (not `bool`'s
+/// false-for-missing semantics).
 enum HermesAgentChatOptIn {
     static let userDefaultsKey = "scarf.experimental.hermesAgentChat"
 
-    /// Reads the live UserDefaults value. Default (missing key) is `false`.
+    /// Reads the live UserDefaults value. Missing key → enabled (default on).
     static var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: userDefaultsKey)
+        isEnabled(in: .standard)
+    }
+
+    /// Testable read against an arbitrary defaults suite.
+    static func isEnabled(in defaults: UserDefaults) -> Bool {
+        if defaults.object(forKey: userDefaultsKey) == nil {
+            return true
+        }
+        return defaults.bool(forKey: userDefaultsKey)
     }
 }

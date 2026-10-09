@@ -8,7 +8,7 @@ import ScarfDesign
 struct AgentBackendsSettingsView: View {
     let viewModel: SettingsViewModel
     @State private var statusModel: AgentBackendsStatusViewModel
-    @AppStorage(HermesAgentChatOptIn.userDefaultsKey) private var hermesAgentChatEnabled = false
+    @AppStorage(HermesAgentChatOptIn.userDefaultsKey) private var hermesAgentChatEnabled = true
 
     init(viewModel: SettingsViewModel) {
         self.viewModel = viewModel
@@ -18,7 +18,7 @@ struct AgentBackendsSettingsView: View {
     var body: some View {
         SettingsSection(title: "Agent Backends", icon: "point.3.connected.trianglepath.dotted") {
             VStack(alignment: .leading, spacing: ScarfSpace.s3) {
-                Text("Scarf can host multiple agent runtimes. Hermes remains the active production backend while Claude Code integration is introduced in isolated stages.")
+                Text("Scarf can host multiple agent runtimes. Hermes is the production backend; Claude Code projects use AgentChat. Hermes project chats default to AgentChat too — turn the switch off anytime to use legacy ChatView.")
                     .scarfStyle(.footnote)
                     .foregroundStyle(ScarfColor.foregroundMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -27,7 +27,7 @@ struct AgentBackendsSettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Use AgentChat for Hermes projects")
                             .scarfStyle(.body)
-                        Text("Experimental. Routes Hermes project chats through the multi-agent AgentChat surface. ChatView remains the default when off and stays supported — turn this off anytime.")
+                        Text("On by default. Routes Hermes project chats through the multi-agent AgentChat surface. Turn off to keep the legacy ChatView escape hatch.")
                             .scarfStyle(.caption)
                             .foregroundStyle(ScarfColor.foregroundMuted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -35,8 +35,8 @@ struct AgentBackendsSettingsView: View {
                 }
                 .toggleStyle(.switch)
                 .accessibilityLabel("Use AgentChat for Hermes projects")
-                .accessibilityHint("Experimental. When on, Hermes project chats use AgentChat instead of ChatView. Off by default.")
-                .help("Experimental opt-in. Hermes projects use AgentChat when enabled; ChatView remains the default escape hatch.")
+                .accessibilityHint("When on (default), Hermes project chats use AgentChat instead of ChatView. Turn off for the legacy ChatView escape hatch.")
+                .help("Hermes projects use AgentChat when enabled (default on). ChatView remains available as an escape hatch when off.")
 
                 if statusModel.isLoading && statusModel.snapshots.isEmpty {
                     HStack(spacing: ScarfSpace.s2) {

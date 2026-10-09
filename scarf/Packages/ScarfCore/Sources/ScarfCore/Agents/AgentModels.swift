@@ -244,7 +244,7 @@ public struct AgentUsage: Codable, Equatable, Hashable, Sendable {
     }
 }
 
-public struct AgentError: Codable, Equatable, Hashable, Sendable, Error {
+public struct AgentError: Codable, Equatable, Hashable, Sendable, Error, CustomStringConvertible {
     public var code: String
     public var message: String
     public var isRecoverable: Bool
@@ -254,4 +254,7 @@ public struct AgentError: Codable, Equatable, Hashable, Sendable, Error {
         self.message = message
         self.isRecoverable = isRecoverable
     }
+
+    /// Prefer the human message in UI and logs; keep `code` for diagnostics.
+    public var description: String { message }
 }

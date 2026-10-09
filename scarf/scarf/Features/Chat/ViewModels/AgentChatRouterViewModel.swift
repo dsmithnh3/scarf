@@ -6,10 +6,11 @@ import ScarfCore
 ///
 /// A project handoff must be resolved *before* the legacy `ChatView` renders,
 /// because that view consumes `AppCoordinator.pendingProjectChat` on appear.
-/// Old/missing project records remain Hermes. Hermes projects stay on legacy
-/// `ChatView` unless `scarf.experimental.hermesAgentChat` is enabled. Explicit
-/// non-Hermes preferences are routed through `AgentRuntime`; an unavailable
-/// backend is surfaced rather than silently falling back to Hermes.
+/// Old/missing project records remain Hermes. Hermes projects use `AgentChat`
+/// when `scarf.experimental.hermesAgentChat` is on (default); turning the flag
+/// off restores the ChatView escape hatch. Explicit non-Hermes preferences are
+/// routed through `AgentRuntime`; an unavailable backend is surfaced rather
+/// than silently falling back to Hermes.
 @MainActor
 @Observable
 final class AgentChatRouterViewModel {

@@ -80,12 +80,16 @@ struct AgentChatRouterViewModelTests {
         #expect(path == missing)
     }
 
-    @Test("opt-in key defaults false when unset")
-    func optInKeyDefaultsFalse() {
+    @Test("opt-in key defaults true when unset; explicit false honors escape hatch")
+    func optInKeyDefaultsTrue() {
         let suiteName = "scarf.router.optin.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        #expect(defaults.bool(forKey: HermesAgentChatOptIn.userDefaultsKey) == false)
+        #expect(HermesAgentChatOptIn.isEnabled(in: defaults) == true)
+        defaults.set(false, forKey: HermesAgentChatOptIn.userDefaultsKey)
+        #expect(HermesAgentChatOptIn.isEnabled(in: defaults) == false)
+        defaults.set(true, forKey: HermesAgentChatOptIn.userDefaultsKey)
+        #expect(HermesAgentChatOptIn.isEnabled(in: defaults) == true)
         #expect(HermesAgentChatOptIn.userDefaultsKey == "scarf.experimental.hermesAgentChat")
     }
 }

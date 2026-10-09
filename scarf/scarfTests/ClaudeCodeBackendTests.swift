@@ -384,6 +384,18 @@ struct ClaudeCodeBackendTests {
         #expect(await backend.installationStatus() == .unavailable(reason: "version probe failed"))
     }
 
+    @Test("fetchConversationHistory stays empty — no JSONL invent")
+    func fetchConversationHistoryReturnsEmpty() async throws {
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/tmp/claude" },
+            installationProbe: { _ in .available(version: "test") },
+            environmentProvider: { [:] }
+        )
+        let session = AgentSession(id: "hist", backendID: .claudeCode)
+        let history = try await backend.fetchConversationHistory(for: session)
+        #expect(history.isEmpty)
+    }
+
     @Test("createSession fails when Claude executable is missing")
     func createSessionRequiresExecutable() async {
         let backend = ClaudeCodeBackend(

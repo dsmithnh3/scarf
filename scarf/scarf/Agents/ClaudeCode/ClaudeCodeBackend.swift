@@ -166,11 +166,16 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     }
 
     /// Claude `--resume` restarts the process; Scarf has no verified
-    /// structured transcript/history API yet. Returning `[]` avoids inventing
-    /// session-file parsers and keeps restore reconcile Scarf-preferring.
-    /// Do not advertise a history capability.
+    /// structured transcript/history API yet (re-probed 2026-10-08 against
+    /// CLI 2.1.289 — see `documents/research/2026-10-08-claude-structured-history-probe.md`).
+    ///
+    /// Returning `[]` is intentional: restore then prefers Scarf's durable
+    /// transcript via ``AgentConversationTranscript/reconciling(withBackendHistory:)``.
+    /// Do not scrape Claude JSONL, invent a parser, or advertise a history
+    /// capability until a version-pinned SDK/API returns structured messages.
     func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
-        []
+        _ = session
+        return []
     }
 
     func send(_ message: AgentMessage, in session: AgentSession) async throws {

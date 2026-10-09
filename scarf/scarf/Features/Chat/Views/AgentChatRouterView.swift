@@ -4,9 +4,10 @@ import ScarfDesign
 
 /// Strangler router for Chat.
 ///
-/// Plain Chat and Hermes projects (flag off) still render the original
-/// `ChatView`. Hermes projects with `scarf.experimental.hermesAgentChat` on,
-/// and projects that prefer a non-Hermes backend, reach the generic surface.
+/// Plain Chat and Hermes projects with the AgentChat flag off still render
+/// the original `ChatView`. Hermes projects with
+/// `scarf.experimental.hermesAgentChat` on (default), and projects that prefer
+/// a non-Hermes backend, reach the generic surface.
 struct AgentChatRouterView: View {
     let viewModel: AgentChatRouterViewModel
 
@@ -267,10 +268,20 @@ private struct AgentProjectChatView: View {
                     )
                 }
 
+                if let historyNotice = viewModel.historyRestoreNotice {
+                    AgentInlineBanner(
+                        icon: "clock.arrow.circlepath",
+                        title: "Conversation restore",
+                        message: historyNotice
+                    )
+                }
+
                 if let startupError = viewModel.startupError {
                     AgentInlineError(
                         title: "Could not start \(backendDisplayName)",
-                        message: startupError
+                        message: startupError,
+                        retryTitle: "Retry",
+                        onRetry: { Task { await viewModel.retryStart() } }
                     )
                 }
 
@@ -279,11 +290,30 @@ private struct AgentProjectChatView: View {
                 }
 
                 if let lastActionError = viewModel.lastActionError {
-                    AgentInlineError(title: "Action failed", message: lastActionError)
+                    AgentInlineError(
+                        title: "Action failed",
+                        message: lastActionError,
+                        retryTitle: "Dismiss",
+                        onRetry: { viewModel.dismissLastActionError() }
+                    )
                 }
 
                 if let idleSlashNotice = viewModel.idleSlashNotice {
                     AgentInlineBanner(icon: "info.circle", title: nil, message: idleSlashNotice)
+                }
+
+                if viewModel.isStarted,
+                   viewModel.state.messages.isEmpty,
+                   viewModel.state.assistantDraft.isEmpty,
+                   viewModel.startupError == nil {
+                    ContentUnavailableView {
+                        Label("Ready", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("Send a message to start chatting with \(backendDisplayName).")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
                 }
 
                 if let plan = AgentPlanCalloutPresenter.planText(from: viewModel.state) {
@@ -652,15 +682,22 @@ private struct AgentInlineBanner: View {
 private struct AgentInlineError: View {
     let title: String
     let message: String
+    var retryTitle: String? = nil
+    var onRetry: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: "exclamationmark.triangle")
                 .font(.callout.weight(.semibold))
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+            if let retryTitle, let onRetry {
+                Button(retryTitle, action: onRetry)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -53,11 +53,12 @@ struct AgentRuntimeRemoteHermesOptInTests {
         #expect(controller != nil)
     }
 
-    @Test("opt-in key is the documented experimental flag")
+    @Test("opt-in key is the documented experimental flag with default-on semantics")
     func optInKeyMatchesPlan() {
         #expect(HermesAgentChatOptIn.userDefaultsKey == "scarf.experimental.hermesAgentChat")
-        #expect(HermesAgentChatOptIn.isEnabled == UserDefaults.standard.bool(
-            forKey: HermesAgentChatOptIn.userDefaultsKey
-        ))
+        let suiteName = "scarf.remote.optin.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        #expect(HermesAgentChatOptIn.isEnabled(in: defaults) == true)
     }
 }

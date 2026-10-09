@@ -518,6 +518,36 @@ struct AgentChatViewModelProductionParityTests {
         #expect(await backend.modeCalls().isEmpty)
     }
 
+    // MARK: - Claude history restore notice (no JSONL invent)
+
+    @Test("Claude start surfaces Scarf-preferring history notice when transcript is empty")
+    func claudeStartSetsEmptyHistoryNotice() async throws {
+        let backend = RecordingBackend(id: .claudeCode, displayName: "Claude Code")
+        let coordinator = AgentCoordinator()
+        await coordinator.register(backend)
+        let controller = AgentConversationController(coordinator: coordinator)
+        let viewModel = AgentChatViewModel(
+            controller: controller,
+            backendID: .claudeCode,
+            workingDirectory: URL(fileURLWithPath: "/tmp/scarf-claude-history", isDirectory: true)
+        )
+
+        await viewModel.start()
+
+        #expect(viewModel.isStarted)
+        #expect(viewModel.historyRestoreNotice == AgentChatViewModel.claudeHistoryRestoreNotice(messageCount: 0))
+        #expect(viewModel.historyRestoreNotice?.contains("does not expose structured session history") == true)
+    }
+
+    @Test("userFacingErrorMessage maps claude.not-installed to install/login guidance")
+    func userFacingClaudeNotInstalled() {
+        let message = AgentChatViewModel.userFacingErrorMessage(
+            AgentError(code: "claude.not-installed", message: "Claude Code executable could not be found")
+        )
+        #expect(message.contains("claude login"))
+        #expect(message.contains("Install the Claude CLI"))
+    }
+
     // MARK: - Permission respond regression
 
     @Test("permission respond still forwards through the controller (regression)")
