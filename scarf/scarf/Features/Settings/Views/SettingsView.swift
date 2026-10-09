@@ -239,7 +239,7 @@ struct SettingsView: View {
         switch tab {
         case .general:   GeneralTab(viewModel: viewModel)
         case .display:   DisplayTab(viewModel: viewModel)
-        case .agent:     AgentTab(viewModel: viewModel)
+        case .agent:     AgentBackendsSettingsView(viewModel: viewModel)
         case .terminal:  TerminalTab(viewModel: viewModel)
         case .browser:   BrowserTab(viewModel: viewModel)
         case .webTools:  WebToolsTab(viewModel: viewModel)

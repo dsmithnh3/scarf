@@ -143,7 +143,11 @@ struct ContentView: View {
                                          peers: cachedVM(.peers) { PeersViewModel(context: serverContext) }
                                      )
                                  })
-        case .chat:             ChatView()
+        case .chat:             AgentChatRouterView(
+                                    viewModel: cachedVM(.chat) {
+                                        AgentChatRouterViewModel(context: serverContext)
+                                    }
+                                )
         case .memory:           MemoryView(context: serverContext)
         case .curator:          CuratorView(context: serverContext)
         case .skills:           SkillsView(context: serverContext)

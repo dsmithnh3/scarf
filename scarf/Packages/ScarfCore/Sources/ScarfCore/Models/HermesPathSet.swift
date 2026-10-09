@@ -108,6 +108,20 @@ public struct HermesPathSet: Sendable, Hashable {
     /// Maps Hermes session IDs to the Scarf project path a chat was
     /// started for. Scarf-owned; Hermes never touches this file.
     public nonisolated var sessionProjectMap: String { scarfDir + "/session_project_map.json" }
+    /// Backend-neutral Scarf conversation identity map
+    /// (`conversationID` → backend id + session id). Used by
+    /// `AgentConversationIdentityStore` for Phase 2 resume foundations.
+    /// Scarf-owned; Hermes never touches this file.
+    public nonisolated var agentConversationIdentities: String {
+        scarfDir + "/agent_conversation_identities.json"
+    }
+    /// Backend-neutral Scarf durable transcript snapshot map
+    /// (`conversationID` → messages / toolResults / usage). Used by
+    /// `AgentConversationTranscriptStore` for Phase 2 resume fidelity.
+    /// Scarf-owned; Hermes never touches this file.
+    public nonisolated var agentConversationTranscripts: String {
+        scarfDir + "/agent_conversation_transcripts.json"
+    }
     /// Cached list of available Nous Portal models. Populated by
     /// `NousModelCatalogService` from `GET https://inference-api.nousresearch.com/v1/models`
     /// using the bearer token in `auth.json`. Refreshed on a 24h TTL or
@@ -210,10 +224,29 @@ public struct HermesPathSet: Sendable, Hashable {
         if isRemote {
             return binaryHint ?? "hermes"
         }
-        for path in Self.hermesBinaryCandidates
-        where FileManager.default.isExecutableFile(atPath: path) {
+        return Self.resolveInstalledBinary() ?? Self.hermesBinaryCandidates[0]
+    }
+
+    /// Local: first executable candidate, or `nil` when Hermes is not installed.
+    /// Remote: the configured hint / `hermes` command name (remote probe decides
+    /// availability — local filesystem checks are not authoritative).
+    public nonisolated var hermesBinaryIfInstalled: String? {
+        if isRemote {
+            return hermesBinary
+        }
+        return Self.resolveInstalledBinary()
+    }
+
+    /// First executable path among `candidates`, or `nil` when none exist.
+    /// Used by provider diagnostics so a missing install is not reported as a
+    /// guessed fallback path.
+    public nonisolated static func resolveInstalledBinary(
+        candidates: [String] = hermesBinaryCandidates,
+        fileManager: FileManager = .default
+    ) -> String? {
+        for path in candidates where fileManager.isExecutableFile(atPath: path) {
             return path
         }
-        return Self.hermesBinaryCandidates[0]
+        return nil
     }
 }

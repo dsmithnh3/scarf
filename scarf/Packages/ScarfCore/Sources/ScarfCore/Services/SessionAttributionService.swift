@@ -118,6 +118,34 @@ public struct SessionAttributionService: Sendable {
         return Set(map.mappings.filter { $0.value == projectPath }.keys)
     }
 
+    /// Session IDs attributed to `projectPath`, most-recently touched first.
+    ///
+    /// Used by Hermes AgentChat restore when Scarf conversation identity is
+    /// empty but ChatView previously attributed Hermes sessions to the project.
+    /// Untouched rows sort after stamped ones; equal stamps keep stable id order.
+    public nonisolated func recentSessionIDs(forProject projectPath: String) -> [String] {
+        let map = load()
+        let ids = map.mappings.compactMap { entry -> String? in
+            entry.value == projectPath ? entry.key : nil
+        }
+        let touched = map.touched ?? [:]
+        return ids.sorted { lhs, rhs in
+            let left = touched[lhs]
+            let right = touched[rhs]
+            switch (left, right) {
+            case let (l?, r?):
+                if l != r { return l > r }
+                return lhs < rhs
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                return lhs < rhs
+            }
+        }
+    }
+
     /// Resolve the project a chat is scoped to, for threading the
     /// project dir into a `hermes acp` spawn (process cwd → AGENTS.md)
     /// and the ACP `session/new` cwd (tool dirs). A caller-known path
