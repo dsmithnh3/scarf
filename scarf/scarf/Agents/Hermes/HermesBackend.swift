@@ -25,6 +25,11 @@ actor HermesBackend: SessionScopedAgentBackend {
         _ modelID: String,
         _ providerID: String?
     ) async throws -> Void
+    /// Test seam for ACP `session/set_mode` without a live client.
+    typealias SessionModeApplier = @Sendable (
+        _ sessionID: String,
+        _ modeID: String
+    ) async throws -> Void
 
     nonisolated let id: AgentID = .hermes
     nonisolated let displayName = "Hermes"
@@ -57,6 +62,7 @@ actor HermesBackend: SessionScopedAgentBackend {
     private let catalogModelsLoader: CatalogModelsLoader
     private let nousModelsLoader: NousModelsLoader
     private let sessionModelApplier: SessionModelApplier?
+    private let sessionModeApplier: SessionModeApplier?
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var clients: [String: ACPClient] = [:]
@@ -71,7 +77,8 @@ actor HermesBackend: SessionScopedAgentBackend {
         configuredProviderResolver: ConfiguredProviderResolver? = nil,
         catalogModelsLoader: CatalogModelsLoader? = nil,
         nousModelsLoader: NousModelsLoader? = nil,
-        sessionModelApplier: SessionModelApplier? = nil
+        sessionModelApplier: SessionModelApplier? = nil,
+        sessionModeApplier: SessionModeApplier? = nil
     ) {
         self.context = context
         self.conversationHistoryLoader = conversationHistoryLoader ?? Self.defaultConversationHistoryLoader
@@ -109,6 +116,7 @@ actor HermesBackend: SessionScopedAgentBackend {
         self.nousModelsLoader = nousModelsLoader
             ?? Self.makeNousModelsLoader(context: context)
         self.sessionModelApplier = sessionModelApplier
+        self.sessionModeApplier = sessionModeApplier
     }
 
     nonisolated private static func makeExecutableResolver(
@@ -292,6 +300,24 @@ actor HermesBackend: SessionScopedAgentBackend {
             modelID: modelID,
             providerID: providerID
         )
+    }
+
+    /// Live ACP `session/set_mode` on an active Hermes session (v0.15+).
+    func setSessionMode(
+        session: AgentSession,
+        modeID: String
+    ) async throws {
+        guard session.backendID == .hermes else {
+            throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
+        }
+        if let sessionModeApplier {
+            try await sessionModeApplier(session.id, modeID)
+            return
+        }
+        guard let client = clients[session.id] else {
+            throw AgentError(code: "hermes.session-not-active", message: "Hermes session is not active")
+        }
+        try await client.setSessionMode(sessionId: session.id, modeId: modeID)
     }
 
     nonisolated private static func defaultConversationHistoryLoader(

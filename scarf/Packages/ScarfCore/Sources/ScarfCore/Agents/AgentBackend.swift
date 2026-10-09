@@ -66,6 +66,15 @@ public protocol AgentBackend: Sendable {
         providerID: String?
     ) async throws
 
+    /// Change the edit-approval mode on a live session when the backend supports it.
+    ///
+    /// Hermes implements this via ACP `session/set_mode` (v0.15+). Claude Code
+    /// does **not**. Default throws unsupported (never a silent no-op).
+    func setSessionMode(
+        session: AgentSession,
+        modeID: String
+    ) async throws
+
     /// Structured conversation history for a resumed session, when the backend
     /// can provide it as `[AgentMessage]`.
     ///
@@ -95,6 +104,18 @@ extension AgentBackend {
         throw AgentError(
             code: "agent.set-session-model-unsupported",
             message: "\(displayName) does not support mid-session model changes",
+            isRecoverable: true
+        )
+    }
+
+    /// Default: mid-session approval-mode changes are unsupported.
+    public func setSessionMode(
+        session: AgentSession,
+        modeID: String
+    ) async throws {
+        throw AgentError(
+            code: "agent.set-session-mode-unsupported",
+            message: "\(displayName) does not support session approval modes",
             isRecoverable: true
         )
     }

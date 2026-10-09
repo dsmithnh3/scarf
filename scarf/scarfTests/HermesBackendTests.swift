@@ -186,4 +186,44 @@ struct HermesBackendTests {
             Issue.record("Unexpected error \(error)")
         }
     }
+
+    @Test("setSessionMode routes through the applier")
+    func setSessionModeUsesApplier() async throws {
+        final class Box: @unchecked Sendable {
+            var calls: [(String, String)] = []
+        }
+        let box = Box()
+        let backend = HermesBackend(
+            context: .local,
+            installationProbe: { .available(version: "test") },
+            sessionModeApplier: { sessionID, modeID in
+                box.calls.append((sessionID, modeID))
+            }
+        )
+        let session = AgentSession(id: "sess-mode", backendID: .hermes)
+        try await backend.setSessionMode(
+            session: session,
+            modeID: ACPApprovalMode.acceptEdits.rawValue
+        )
+        #expect(box.calls.count == 1)
+        #expect(box.calls[0].0 == "sess-mode")
+        #expect(box.calls[0].1 == "accept_edits")
+    }
+
+    @Test("setSessionMode without applier or active client fails")
+    func setSessionModeRequiresActiveSession() async {
+        let backend = HermesBackend(
+            context: .local,
+            installationProbe: { .available(version: "test") }
+        )
+        let session = AgentSession(id: "missing-mode", backendID: .hermes)
+        do {
+            try await backend.setSessionMode(session: session, modeID: "default")
+            Issue.record("Expected session-not-active")
+        } catch let error as AgentError {
+            #expect(error.code == "hermes.session-not-active")
+        } catch {
+            Issue.record("Unexpected error \(error)")
+        }
+    }
 }

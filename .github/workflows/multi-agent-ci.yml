@@ -56,7 +56,7 @@ jobs:
       - name: Run multi-agent behavior tests
         run: >-
           swift test --filter
-          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission|AgentAuth|HermesPathSetInstalled|AgentModelPicker'
+          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission|AgentAuth|HermesPathSetInstalled|AgentModelPicker|SessionAttributionRecent'
 
   macos-build:
     name: macOS App Build
@@ -150,6 +150,9 @@ jobs:
             -only-testing:scarfTests/ClaudeProcessConfigurationTests \
             -only-testing:scarfTests/AgentProviderDiagnosticsTests \
             -only-testing:scarfTests/AgentChatViewModelModelSelectionTests \
+            -only-testing:scarfTests/AgentChatViewModelProductionParityTests \
+            -only-testing:scarfTests/AgentChatRouterViewModelTests \
+            -only-testing:scarfTests/AgentRuntimeRemoteHermesOptInTests \
             -only-testing:scarfTests/HermesBackendTests \
             -skipPackagePluginValidation \
             ONLY_ACTIVE_ARCH=YES \
@@ -188,6 +191,21 @@ jobs:
           fi
           if ! grep -qE 'HermesBackendTests|Hermes agent backend' build/claude-process-tests.log; then
             echo 'HermesBackendTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentChatViewModelProductionParityTests|Agent chat production parity' build/claude-process-tests.log; then
+            echo 'AgentChatViewModelProductionParityTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentChatRouterViewModelTests|Agent chat router opt-in' build/claude-process-tests.log; then
+            echo 'AgentChatRouterViewModelTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentRuntimeRemoteHermesOptInTests|Remote Hermes AgentChat opt-in smoke' build/claude-process-tests.log; then
+            echo 'AgentRuntimeRemoteHermesOptInTests did not appear in xcodebuild output'
             tail -n 80 build/claude-process-tests.log
             exit 1
           fi

@@ -4,9 +4,9 @@ import ScarfDesign
 
 /// Strangler router for Chat.
 ///
-/// Plain Chat, session resumes, and Hermes projects still render the original
-/// `ChatView`. Only a project handoff whose canonical record explicitly selects
-/// a non-Hermes backend reaches the generic surface.
+/// Plain Chat and Hermes projects (flag off) still render the original
+/// `ChatView`. Hermes projects with `scarf.experimental.hermesAgentChat` on,
+/// and projects that prefer a non-Hermes backend, reach the generic surface.
 struct AgentChatRouterView: View {
     let viewModel: AgentChatRouterViewModel
 
@@ -97,11 +97,18 @@ private struct AgentBackendUnavailableView: View {
         ContentUnavailableView {
             Label("Agent Backend Unavailable", systemImage: "exclamationmark.triangle")
         } description: {
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 if let backendID {
                     Text("This project is configured for \(backendID.rawValue).")
                 }
                 Text(message)
+                // Claude Code owns its own CLI login state — Scarf never
+                // manages its OAuth flow or reads its Keychain item, so the
+                // only actionable guidance here is the CLI itself.
+                if backendID == .claudeCode {
+                    Text("Install the Claude CLI, then run `claude login` in Terminal to authenticate. Scarf does not manage Claude's sign-in — the CLI owns its own login state.")
+                        .foregroundStyle(.secondary)
+                }
                 Text(projectPath)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -217,6 +224,17 @@ private struct AgentProjectChatView: View {
                     .controlSize(.mini)
             }
 
+            // Hermes-only: Claude Code has no `session/set_mode` RPC, so the
+            // picker never renders there. Shown unconditionally for Hermes
+            // (rather than gated behind a live capability check) so the user
+            // always has an explanation — `selectApprovalMode` itself is a
+            // safe no-op on a host that can't honor it.
+            if project.preferredAgentID == .hermes, viewModel.isStarted {
+                ChatApprovalModeBadge(mode: viewModel.activeApprovalMode) { mode in
+                    Task { await viewModel.selectApprovalMode(mode) }
+                }
+            }
+
             Button {
                 isExtensionsSheetPresented = true
             } label: {
@@ -241,6 +259,14 @@ private struct AgentProjectChatView: View {
     private var transcript: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
+                if viewModel.missingCredentialsBanner {
+                    AgentInlineBanner(
+                        icon: "key.fill",
+                        title: "No AI provider credentials detected",
+                        message: "Add credentials in Configure → Credential Pools, set ANTHROPIC_API_KEY (or similar) in ~/.hermes/.env, or export it in your shell profile, then restart Scarf."
+                    )
+                }
+
                 if let startupError = viewModel.startupError {
                     AgentInlineError(
                         title: "Could not start \(backendDisplayName)",
@@ -250,6 +276,14 @@ private struct AgentProjectChatView: View {
 
                 if let error = viewModel.state.error {
                     AgentInlineError(title: "Agent error", message: error.message)
+                }
+
+                if let lastActionError = viewModel.lastActionError {
+                    AgentInlineError(title: "Action failed", message: lastActionError)
+                }
+
+                if let idleSlashNotice = viewModel.idleSlashNotice {
+                    AgentInlineBanner(icon: "info.circle", title: nil, message: idleSlashNotice)
                 }
 
                 if let plan = AgentPlanCalloutPresenter.planText(from: viewModel.state) {
@@ -298,7 +332,10 @@ private struct AgentProjectChatView: View {
                     }
                 }
 
-                if !viewModel.state.toolCalls.isEmpty || !viewModel.state.commands.isEmpty {
+                if !viewModel.state.toolCalls.isEmpty
+                    || !viewModel.state.commands.isEmpty
+                    || !viewModel.state.fileChanges.isEmpty
+                    || viewModel.state.usage != nil {
                     AgentActivitySummary(state: viewModel.state)
                 }
             }
@@ -458,26 +495,157 @@ private struct AgentMessageRow: View {
     }
 }
 
+/// Expanded activity log: every tool call's title + input, every command
+/// line, every file-change path, and the running token usage when the
+/// backend reports it. Replaces the earlier count-only summary so a user
+/// can see WHAT ran, not just how many things did.
 private struct AgentActivitySummary: View {
     let state: AgentConversationState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Activity")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            if !state.toolCalls.isEmpty {
-                Text("\(state.toolCalls.count) tool call\(state.toolCalls.count == 1 ? "" : "s")")
-                    .font(.caption)
+            ForEach(state.toolCalls) { call in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: toolIcon(for: call.status))
+                        .foregroundStyle(toolColor(for: call.status))
+                        .font(.caption)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(call.title) · \(call.kind)")
+                            .font(.caption.weight(.medium))
+                        if let input = call.input, !input.isEmpty {
+                            Text(input)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
             }
-            if !state.commands.isEmpty {
-                Text("\(state.commands.count) command\(state.commands.count == 1 ? "" : "s")")
-                    .font(.caption)
+
+            ForEach(state.commands) { command in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "terminal")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    Text(command.command)
+                        .font(.system(.caption2, design: .monospaced))
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Text(commandStatusLabel(command.status))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ForEach(Array(state.fileChanges.enumerated()), id: \.offset) { _, change in
+                HStack(spacing: 6) {
+                    Image(systemName: fileChangeIcon(change.kind))
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    Text(change.path)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Text(change.kind.rawValue)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let usage = state.usage {
+                Divider()
+                Text(usageSummary(usage))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(10)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func toolIcon(for status: AgentToolStatus) -> String {
+        switch status {
+        case .pending: return "circle.dotted"
+        case .running: return "arrow.triangle.2.circlepath"
+        case .completed: return "checkmark.circle"
+        case .failed: return "xmark.circle"
+        case .cancelled: return "slash.circle"
+        }
+    }
+
+    private func toolColor(for status: AgentToolStatus) -> Color {
+        switch status {
+        case .pending, .running: return .secondary
+        case .completed: return .green
+        case .failed: return .red
+        case .cancelled: return .secondary
+        }
+    }
+
+    private func commandStatusLabel(_ status: AgentCommandStatus) -> String {
+        switch status {
+        case .pending: return "pending"
+        case .running: return "running"
+        case .completed: return "done"
+        case .failed: return "failed"
+        case .cancelled: return "cancelled"
+        }
+    }
+
+    private func fileChangeIcon(_ kind: AgentFileChangeKind) -> String {
+        switch kind {
+        case .created: return "plus.circle"
+        case .modified: return "pencil.circle"
+        case .deleted: return "minus.circle"
+        case .renamed: return "arrow.right.circle"
+        case .unknown: return "doc.circle"
+        }
+    }
+
+    private func usageSummary(_ usage: AgentUsage) -> String {
+        var parts = ["\(usage.inputTokens) in", "\(usage.outputTokens) out"]
+        if usage.reasoningTokens > 0 {
+            parts.append("\(usage.reasoningTokens) reasoning")
+        }
+        if usage.cachedReadTokens > 0 {
+            parts.append("\(usage.cachedReadTokens) cached")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Informational (non-error) inline banner — missing credentials, idle
+/// slash-command rewrite notices. Visually distinct from
+/// ``AgentInlineError``'s warning tone.
+private struct AgentInlineBanner: View {
+    let icon: String
+    let title: String?
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                if let title {
+                    Text(title)
+                        .font(.callout.weight(.semibold))
+                }
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

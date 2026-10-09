@@ -188,13 +188,37 @@ public actor AgentConversationController {
     ///
     /// This is the production start seam for app view models so persistence
     /// logic stays on the controller rather than spreading through UI.
+    ///
+    /// `fallbackSessionIDs` bridges Hermes ChatView attributions when Scarf
+    /// conversation identity is empty: try each id via ``resumeSession`` +
+    /// history hydrate before minting a new session. Failed resumes are
+    /// skipped (not fatal).
     @discardableResult
     public func startOrRestorePersistedSession(
         backendID: AgentID,
-        configuration: AgentSessionConfiguration
+        configuration: AgentSessionConfiguration,
+        fallbackSessionIDs: [String] = []
     ) async throws -> AgentSession {
         if let restored = try await restorePersistedSession() {
             return restored
+        }
+        for sessionID in fallbackSessionIDs {
+            let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let candidate = AgentSession(
+                id: trimmed,
+                backendID: backendID,
+                workingDirectory: configuration.workingDirectory,
+                metadata: configuration.modelID.map { ["model": $0] } ?? [:]
+            )
+            do {
+                let resumed = try await resumeSession(candidate)
+                let history = try await coordinator.fetchConversationHistory(for: resumed)
+                hydratePersistedTranscript(backendHistory: history)
+                return resumed
+            } catch {
+                continue
+            }
         }
         return try await startSession(backendID: backendID, configuration: configuration)
     }
@@ -277,6 +301,28 @@ public actor AgentConversationController {
             )
             throw error
         }
+    }
+
+    /// Live mid-session approval-mode switch (Hermes ACP `session/set_mode`).
+    /// Failures surface on ``AgentConversationState/error`` and rethrow.
+    public func setSessionMode(modeID: String) async throws {
+        guard let session = activeSession else {
+            throw AgentConversationControllerError.noActiveSession
+        }
+        do {
+            try await coordinator.setSessionMode(session: session, modeID: modeID)
+        } catch {
+            surfaceConversationError(
+                code: "conversation.set-mode-failed",
+                underlying: error
+            )
+            throw error
+        }
+    }
+
+    /// Active session id when a conversation is open.
+    public func activeSessionID() -> String? {
+        activeSession?.id
     }
 
     public func close() async throws {
@@ -444,7 +490,28 @@ public actor AgentConversationController {
     }
 
     private func hydratePersistedTranscript(backendHistory: [AgentMessage] = []) {
-        guard let conversationID, let transcriptStore else { return }
+        // Attribution-fallback resume (no Scarf identity/transcript yet) still
+        // needs Hermes history on the conversation — apply backend rows alone.
+        guard let conversationID, let transcriptStore else {
+            guard !backendHistory.isEmpty else { return }
+            let transcript = AgentConversationTranscript(
+                conversationID: "ephemeral"
+            ).reconciling(withBackendHistory: backendHistory)
+            guard transcript.hasDurableContent else { return }
+            state.restoreDurableTranscript(
+                messages: transcript.messages,
+                toolResults: transcript.toolResults,
+                usage: transcript.usage,
+                toolCalls: transcript.toolCalls,
+                commands: transcript.commands,
+                commandOutput: transcript.commandOutput,
+                commandResults: transcript.commandResults,
+                fileChanges: transcript.fileChanges,
+                reasoningBlocks: transcript.reasoningBlocks
+            )
+            publishState()
+            return
+        }
         do {
             let loaded = try transcriptStore.load(conversationID: conversationID)
                 ?? AgentConversationTranscript(conversationID: conversationID)

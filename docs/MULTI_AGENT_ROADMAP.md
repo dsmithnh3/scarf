@@ -124,7 +124,7 @@ Full cite: [`documents/research/2026-10-06-claude-cli-bridge-sources.md`](../doc
 5. Codex adapter — roadmap Phase 4; first-slice plan: `documents/plans/2026-10-08-codex-adapter-first-slice.md` (doc only; no product code yet).
 6. Native agent loops / sub-agents — Priority C only; Scarf is not an agent runtime (charter).
 
-**Human decision point:** Hermes strangler → `AgentChat` (exposes multi-agent set_model), or Codex adapter per `documents/plans/2026-10-08-codex-adapter-first-slice.md`. Native loops stay Priority C.
+**Human decision point (chosen 2026-10-09):** Multi-agent production **B + opt-in** — Hermes strangler onto `AgentChat` behind `scarf.experimental.hermesAgentChat` (default off; ChatView remains escape hatch) after must-have parity; Claude AgentChat hardening; then merge. Codex stays `documents/plans/2026-10-08-codex-adapter-first-slice.md`. Native loops stay Priority C. Task: `t-multi-agent-production`.
 
 ### Phase 5 — project preference auth-detail polish (models blocked)
 
@@ -267,7 +267,19 @@ Claude process cleanup is locked without a production change. Conversation close
 7. **CLUI production-transfer audit (2026-10-06) — read locally.** `/Users/danielsmith/Developer/macOS-CLUI-CC` was audited against Scarf. Ranked steal/adapt/skip: `documents/research/2026-10-06-clui-scarf-production-transfer.md`. Verdict: CLUI does not implement control `initialize` or `claude auth status` and hard-codes opus/sonnet/haiku, so it does **not** change the auth → initialize → models → slash order. Installed CLI checked: 2.1.289. Do not transplant Opal UI.
 8. ~~Read-only extensions browser + thin Hermes `models()`~~ **Done** (`f225304c`) — CI [37640089813](https://github.com/dsmithnh3/scarf/actions/runs/37640089813).
 9. ~~Claude model Menu + stream-decoder gaps + initialize `agents`→skills~~ **Done on this PR** — Claude Menu restarts with `--model`; stream-decoder gaps; initialize agents → Claude skills.
-10. ~~Hermes multi-agent ACP `session/set_model` (adapter prep)~~ **Done on this PR** — `AgentBackend.setSessionModel` (Hermes via ACP; default throws); `AgentChatViewModel` Hermes live path with first-colon picker split, busy/`isRunning` ignore, failure revert; Claude Process CI filters include model-selection + HermesBackend suites. **Honest framing:** Hermes projects still route to legacy `ChatView` (Rich Chat presets remain live UX); no strangler flip. Claude history still blocked (probe note above). Codex → `documents/plans/2026-10-08-codex-adapter-first-slice.md` (doc only). Native loops stay Priority C.
+10. ~~Hermes multi-agent ACP `session/set_model` (adapter prep)~~ **Done on this PR** — adapter prep shipped; Hermes projects still default to `ChatView`.
+11. **Multi-agent production B + opt-in (landed on this PR)** — Settings flag `scarf.experimental.hermesAgentChat` (default **off**) routes Hermes → `AgentChat` when enabled. Must-have parity: resume via `SessionAttributionService.recentSessionIDs` fallback, project preset boot + mid-chat model menu, `session/set_mode` + project auto-accept, credential preflight banner, transcript tools/commands/files + idle `/steer`/`/queue`, remote Hermes controller smoke. Claude AgentChat: install/`claude login` guidance, visible action errors, richer activity/usage; `fetchConversationHistory` still `[]`. ChatView remains default Hermes escape hatch. **Do next:** soak → separate default-flip task; Codex per plan doc. Task `t-multi-agent-production`.
+
+### Production B smoke matrix (manual, local Mac)
+
+| Path | Flag | Checks |
+|------|------|--------|
+| Hermes ChatView | off | create / resume / preset / permission / slash |
+| Hermes AgentChat | on | create / resume (attributed session) / preset / approval / permission / idle `/queue`+`/steer` |
+| Claude AgentChat | n/a | model restart + permission + Scarf transcript restore; history stays empty from Claude |
+| Remote Hermes AgentChat | on | create/send/permission once over SSH (automated: `AgentRuntimeRemoteHermesOptInTests`) |
+
+Memophant tiers (`documents/`, `tasks/`, `TASKS.md`, `.memory/`) stay dirty for human commit.
 
 ## macOS-CLUI-CC adoption analysis
 

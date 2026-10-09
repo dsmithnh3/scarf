@@ -127,6 +127,20 @@ public actor AgentCoordinator {
         )
     }
 
+    /// Routes a live approval-mode switch to the session's backend.
+    ///
+    /// Backends that do not support `session/set_mode` throw
+    /// ``AgentError`` with code `agent.set-session-mode-unsupported`.
+    public func setSessionMode(
+        session: AgentSession,
+        modeID: String
+    ) async throws {
+        try await requiredBackend(session.backendID).setSessionMode(
+            session: session,
+            modeID: modeID
+        )
+    }
+
     public func latestRoutedEventSequence() -> UInt64 { routedEventSequence }
 
     private func requiredBackend(_ id: AgentID) async throws -> any AgentBackend {
