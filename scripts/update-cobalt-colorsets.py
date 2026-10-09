@@ -37,14 +37,16 @@ def colorset(light: str, dark: str) -> dict:
     }
 
 
+# Hue ~214° (classic cobalt / azure), not ~226° indigo which reads purple.
+# Anchored near cobalt blue (#0047AB) but lifted for UI contrast.
 PAIRS = {
-    "Brand/BrandPrimary": ("2F5BEA", "7B9CFF"),
-    "Brand/BrandHover": ("2448C7", "9BB4FF"),
-    "Brand/BrandActive": ("1B3599", "5A7FF0"),
-    "Brand/BrandDeep": ("12256E", "1B3599"),
-    "Brand/BrandBright": ("7B9CFF", "9BB4FF"),
-    "Brand/BrandSoftStart": ("E8EEFF", "1A2440"),
-    "Brand/BrandSoftEnd": ("C5D4FF", "243566"),
+    "Brand/BrandPrimary": ("0066E8", "5B9FFF"),
+    "Brand/BrandHover": ("0056C7", "7AB0FF"),
+    "Brand/BrandActive": ("00419A", "3D86F0"),
+    "Brand/BrandDeep": ("002E6E", "00419A"),
+    "Brand/BrandBright": ("5B9FFF", "7AB0FF"),
+    "Brand/BrandSoftStart": ("E6F0FF", "121A2A"),
+    "Brand/BrandSoftEnd": ("C2D8FF", "1C2E4D"),
     "Surface/BackgroundPrimary": ("F7F8FA", "0E1016"),
     "Surface/BackgroundSecondary": ("FFFFFF", "181B24"),
     "Surface/BackgroundTertiary": ("EEF0F4", "1E2230"),
@@ -55,7 +57,7 @@ PAIRS = {
     "Foreground/ForegroundFaint": ("8B919C", "6B7382"),
 }
 
-ACCENT = ("2F5BEA", "7B9CFF")
+ACCENT = ("0066E8", "5B9FFF")
 
 
 def main():

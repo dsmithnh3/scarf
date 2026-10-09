@@ -102,6 +102,7 @@ xcb() {
       -destination 'platform=macOS' \
       -derivedDataPath "$DERIVED" \
       -clonedSourcePackagesDirPath "$SPM" \
+      -skipPackagePluginValidation \
       "$@" \
       "$action" )
 }
@@ -239,7 +240,15 @@ say "==> building $SCHEME ($CONFIG) → isolated DerivedData $DERIVED"
 # ONLY_ACTIVE_ARCH=YES → build just this Mac's slice (not a universal binary); it's a local
 # dogfood copy, so half the compile for the same runtime behavior.
 _t0="$(date +%s)"
-if ! build -allowProvisioningUpdates ONLY_ACTIVE_ARCH=YES "INFOPLIST_KEY_CFBundleDisplayName=$DISPLAY_NAME" ${EXTRA_XCODEBUILD_ARGS[@]+"${EXTRA_XCODEBUILD_ARGS[@]}"}; then
+# Prefer unsigned local dogfood when the Mac Development team/cert isn't
+# available in this environment (common for agent/CLI builds). Override with
+# BUILD_DETACHED_SIGNED=1 to use -allowProvisioningUpdates + the project team.
+if [ "${BUILD_DETACHED_SIGNED:-0}" = 1 ]; then
+  _sign_args=(-allowProvisioningUpdates)
+else
+  _sign_args=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=)
+fi
+if ! build ONLY_ACTIVE_ARCH=YES "INFOPLIST_KEY_CFBundleDisplayName=$DISPLAY_NAME" "${_sign_args[@]}" ${EXTRA_XCODEBUILD_ARGS[@]+"${EXTRA_XCODEBUILD_ARGS[@]}"}; then
   KEEP_LOG=1
   say "!! BUILD FAILED — your currently-running copy (if any) was left untouched. Errors:"
   grep -E "error:|fatal error:" "$BUILD_LOG" | grep -v "GeneratedModuleMaps" | head -8 >&2 || true

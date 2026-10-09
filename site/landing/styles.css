@@ -15,7 +15,7 @@
 
 :root {
   /* Colors — light mode (mirrors ScarfBrand.xcassets light variants) */
-  --accent: #2F5BEA;
+  --accent: #0066E8;
   --accent-hover: #2448C7;
   --accent-active: #1B3599;
   --accent-tint: rgba(47, 91, 234, 0.12);
@@ -74,7 +74,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #7B9CFF;
+    --accent: #5B9FFF;
     --accent-hover: #9BB4FF;
     --accent-active: #5A7FF0;
     --accent-tint: rgba(123, 156, 255, 0.16);
@@ -105,7 +105,7 @@
 /* Manual theme override (set by app.js — wins over media query) */
 :root[data-theme="light"] {
   color-scheme: light;
-  --accent: #2F5BEA;
+  --accent: #0066E8;
   --accent-hover: #2448C7;
   --accent-active: #1B3599;
   --accent-tint: rgba(47, 91, 234, 0.12);
@@ -129,7 +129,7 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --accent: #7B9CFF;
+  --accent: #5B9FFF;
   --accent-hover: #9BB4FF;
   --accent-active: #5A7FF0;
   --accent-tint: rgba(123, 156, 255, 0.16);
