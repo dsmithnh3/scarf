@@ -91,7 +91,7 @@ struct ProjectsListView: View {
                             .foregroundStyle(ScarfColor.foregroundMuted)
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                     }
                     .listRowBackground(ScarfColor.backgroundSecondary)
                     .accessibilityElement(children: .combine)

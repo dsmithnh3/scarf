@@ -1381,7 +1381,7 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                     VStack(alignment: .leading, spacing: 2) {
                         if let hint = controller.vm.acpErrorHint {
                             Text(hint)
@@ -1431,7 +1431,7 @@ struct ChatView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.orange.opacity(0.12))
+            .background(ScarfColor.warning.opacity(0.12))
         }
     }
 
@@ -1559,7 +1559,7 @@ struct ChatView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 32))
-                .foregroundStyle(.orange)
+                .foregroundStyle(ScarfColor.warning)
             Text("Chat connection failed")
                 .font(.headline)
             Text(message)

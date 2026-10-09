@@ -70,7 +70,7 @@ struct ActivityView: View {
     private func loadErrorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: ScarfSpace.s2) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(ScarfColor.warning)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Couldn't load activity")
                     .scarfStyle(.bodyEmph)
@@ -88,9 +88,9 @@ struct ActivityView: View {
             .controlSize(.small)
         }
         .padding(ScarfSpace.s3)
-        .background(Color.orange.opacity(0.08))
+        .background(ScarfColor.warning.opacity(0.08))
         .overlay(
-            Rectangle().fill(Color.orange.opacity(0.25)).frame(height: 1),
+            Rectangle().fill(ScarfColor.warning.opacity(0.25)).frame(height: 1),
             alignment: .bottom
         )
         // Sweep contract: see DashboardView.readErrorBanner.

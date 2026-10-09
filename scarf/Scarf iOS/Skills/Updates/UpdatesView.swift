@@ -93,7 +93,7 @@ struct UpdatesView: View {
                 systemImage: "exclamationmark.triangle"
             )
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.orange)
+            .foregroundStyle(ScarfColor.warning)
             ForEach(vm.updateFaults) { fault in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(fault.identifier)
@@ -125,7 +125,7 @@ struct UpdatesView: View {
                 systemImage: "pencil.and.outline"
             )
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.orange)
+            .foregroundStyle(ScarfColor.warning)
             ForEach(vm.skippedLocalEdits, id: \.self) { name in
                 HStack {
                     Text(name).font(.callout.monospaced())
@@ -161,7 +161,7 @@ struct UpdatesView: View {
                 ForEach(vm.updates) { update in
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.triangle.2.circlepath")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                             .frame(width: 24)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(update.identifier)

@@ -107,7 +107,7 @@ struct WebhooksView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
-                .foregroundStyle(.orange)
+                .foregroundStyle(ScarfColor.warning)
             Text("Webhook platform not enabled")
                 .font(.title3.bold())
             // `hermes webhook` checks only config.yaml's `platforms.webhook.enabled`

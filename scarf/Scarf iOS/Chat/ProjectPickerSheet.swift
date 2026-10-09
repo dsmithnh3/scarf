@@ -62,7 +62,7 @@ struct ProjectPickerSheet: View {
                             .padding(.vertical, 8)
                     } else if let err = loadError {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                             .font(.caption)
                     } else if projects.isEmpty {
                         Text("No Scarf projects registered yet. Create one in the Mac app's Projects sidebar.")

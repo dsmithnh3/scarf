@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 import Foundation
 import ScarfCore
 
@@ -50,7 +51,8 @@ enum AnsiStripper {
 func parseColor(_ name: String?) -> Color {
     switch name?.lowercased() {
     case "red": return .red
-    case "orange": return .orange
+    case "orange": return ScarfColor.warning
+    case "accent": return ScarfColor.accent
     case "yellow": return .yellow
     case "green": return .green
     case "blue": return .blue

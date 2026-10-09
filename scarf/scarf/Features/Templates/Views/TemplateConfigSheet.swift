@@ -89,7 +89,7 @@ struct TemplateConfigSheet: View {
             if let commitError = viewModel.commitError {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                         .font(.caption)
                     Text(commitError)
                         .font(.caption)

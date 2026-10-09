@@ -408,7 +408,7 @@ struct CronEditorView: View {
                         if oneShotTimeIsUnusable {
                             Text("Pick a future time — a one-shot more than \(Int(HermesCronJob.oneShotGraceSeconds)) s in the past can never fire.")
                                 .font(.caption)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(ScarfColor.warning)
                                 .accessibilityIdentifier("cron.editor.pastOneShot")
                         }
                     }
@@ -419,7 +419,7 @@ struct CronEditorView: View {
                     if let refusal = scheduleRefusal {
                         Text(refusal.message)
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                             .accessibilityIdentifier("cron.editor.scheduleRefusal")
                     }
                 }

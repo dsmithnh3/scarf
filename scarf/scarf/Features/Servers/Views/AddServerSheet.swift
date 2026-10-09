@@ -185,7 +185,7 @@ struct AddServerSheet: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("state.db not found at the default location, but Scarf found one at:")
                                     .font(.caption)
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(ScarfColor.warning)
                                 HStack {
                                     Text(suggestion)
                                         .font(.caption.monospaced())
@@ -202,7 +202,7 @@ struct AddServerSheet: View {
                         } else {
                             Text("state.db not found at the configured path. Either Hermes hasn't run yet on this server, or it's installed at a non-default location — set the Hermes data directory field above.")
                                 .font(.caption)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(ScarfColor.warning)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }

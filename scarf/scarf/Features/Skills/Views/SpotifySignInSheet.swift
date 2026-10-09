@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 import AppKit
 import ScarfCore
 
@@ -161,7 +162,7 @@ struct SpotifySignInSheet: View {
             if !clientIDDraft.isEmpty, !SpotifyAuthFlow.isPlausibleClientID(clientIDDraft) {
                 Text("A Client ID is letters and digits only (usually 32 characters).")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
             }
             HStack {
                 Spacer()
@@ -302,7 +303,7 @@ struct SpotifySignInSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                 Text("Sign-in failed")
                     .font(.headline)
                 Spacer()

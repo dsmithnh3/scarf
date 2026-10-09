@@ -236,7 +236,7 @@ struct GatewayView: View {
         VStack(alignment: .leading, spacing: ScarfSpace.s2) {
             Label("This gateway is standalone: it serves only its own profile.", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption.bold())
-                .foregroundStyle(.orange)
+                .foregroundStyle(ScarfColor.warning)
             if !warning.unservedProfiles.isEmpty {
                 Text("Profiles not served (their bots stay silent): \(warning.unservedProfiles.joined(separator: ", "))")
                     .font(.caption)
@@ -257,7 +257,7 @@ struct GatewayView: View {
             }
         }
         .padding(ScarfSpace.s3)
-        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .background(ScarfColor.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Platforms
@@ -333,7 +333,7 @@ struct GatewayView: View {
                 VStack(alignment: .leading, spacing: ScarfSpace.s2) {
                     Label("Pending Approvals", systemImage: "clock.badge.questionmark")
                         .font(.caption.bold())
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                     ForEach(viewModel.pendingPairings) { pending in
                         HStack {
                             Label(pending.platform.capitalized, systemImage: platformIcon(pending.platform))
@@ -349,7 +349,7 @@ struct GatewayView: View {
                         }
                         .font(.caption)
                         .padding(ScarfSpace.s2)
-                        .background(.orange.opacity(0.1))
+                        .background(ScarfColor.warning.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.sm))
                     }
                 }
