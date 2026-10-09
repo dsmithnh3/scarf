@@ -55,6 +55,17 @@ public protocol AgentBackend: Sendable {
     func cancel(session: AgentSession) async
     func close(session: AgentSession) async
 
+    /// Change the model on a live session when the backend supports it.
+    ///
+    /// Hermes implements this via ACP `session/set_model`. Claude Code does
+    /// **not** — multi-agent Claude restarts with `--model` instead. Default
+    /// throws unsupported (never a silent no-op).
+    func setSessionModel(
+        session: AgentSession,
+        modelID: String,
+        providerID: String?
+    ) async throws
+
     /// Structured conversation history for a resumed session, when the backend
     /// can provide it as `[AgentMessage]`.
     ///
@@ -74,6 +85,19 @@ extension AgentBackend {
 
     /// Default: no live extension discovery.
     public func discoveredExtensions() async -> [AgentExtensionDescriptor] { [] }
+
+    /// Default: mid-session model changes are unsupported.
+    public func setSessionModel(
+        session: AgentSession,
+        modelID: String,
+        providerID: String?
+    ) async throws {
+        throw AgentError(
+            code: "agent.set-session-model-unsupported",
+            message: "\(displayName) does not support mid-session model changes",
+            isRecoverable: true
+        )
+    }
 
     /// Default: no structured history. Concrete backends override when a real
     /// protocol source exists.

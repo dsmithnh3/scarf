@@ -56,7 +56,7 @@ jobs:
       - name: Run multi-agent behavior tests
         run: >-
           swift test --filter
-          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission|AgentAuth|HermesPathSetInstalled'
+          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission|AgentAuth|HermesPathSetInstalled|AgentModelPicker'
 
   macos-build:
     name: macOS App Build
@@ -149,6 +149,8 @@ jobs:
             -only-testing:scarfTests/ClaudeCodeBackendTests \
             -only-testing:scarfTests/ClaudeProcessConfigurationTests \
             -only-testing:scarfTests/AgentProviderDiagnosticsTests \
+            -only-testing:scarfTests/AgentChatViewModelModelSelectionTests \
+            -only-testing:scarfTests/HermesBackendTests \
             -skipPackagePluginValidation \
             ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
@@ -159,7 +161,7 @@ jobs:
           status=$?
           if [ "$status" -ne 0 ]; then
             echo '::group::Filtered xcodebuild test diagnostics'
-            grep -nE 'error:|fatal error:|failed|Test Case|Test Suite|Swift Testing|Claude|process|\*\* TEST FAILED \*\*|\*\* TEST SUCCEEDED \*\*' build/claude-process-tests.log | tail -n 240 || true
+            grep -nE 'error:|fatal error:|failed|Test Case|Test Suite|Swift Testing|Claude|Hermes|process|model|\*\* TEST FAILED \*\*|\*\* TEST SUCCEEDED \*\*' build/claude-process-tests.log | tail -n 240 || true
             echo '::endgroup::'
             exit "$status"
           fi
@@ -176,6 +178,16 @@ jobs:
           fi
           if ! grep -qE 'AgentProviderDiagnosticsTests|Agent provider installation diagnostics' build/claude-process-tests.log; then
             echo 'AgentProviderDiagnosticsTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentChatViewModelModelSelectionTests|Agent chat model selection' build/claude-process-tests.log; then
+            echo 'AgentChatViewModelModelSelectionTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'HermesBackendTests|Hermes agent backend' build/claude-process-tests.log; then
+            echo 'HermesBackendTests did not appear in xcodebuild output'
             tail -n 80 build/claude-process-tests.log
             exit 1
           fi

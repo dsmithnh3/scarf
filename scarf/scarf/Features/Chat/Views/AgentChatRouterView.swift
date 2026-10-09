@@ -196,8 +196,12 @@ private struct AgentProjectChatView: View {
                         .background(ScarfColor.backgroundSecondary, in: Capsule())
                 }
                 .menuStyle(.borderlessButton)
-                .disabled(viewModel.isChangingModel || viewModel.isLoadingModels)
-                .help("Restart this Claude session with the selected model")
+                .disabled(
+                    viewModel.isChangingModel
+                        || viewModel.isLoadingModels
+                        || viewModel.state.isRunning
+                )
+                .help(viewModel.modelPickerHelp)
                 .accessibilityLabel("Model: \(viewModel.modelBadgeLabel ?? "default")")
             } else if let modelLabel = viewModel.modelBadgeLabel {
                 Text(modelLabel)

@@ -19,6 +19,12 @@ actor HermesBackend: SessionScopedAgentBackend {
     typealias CatalogModelsLoader = @Sendable (String) async -> [AgentModel]
     /// Nous Portal rows already mapped into ``AgentModel`` (`nous:<id>`).
     typealias NousModelsLoader = @Sendable () async -> [AgentModel]
+    /// Test seam for ACP `session/set_model` without a live client.
+    typealias SessionModelApplier = @Sendable (
+        _ sessionID: String,
+        _ modelID: String,
+        _ providerID: String?
+    ) async throws -> Void
 
     nonisolated let id: AgentID = .hermes
     nonisolated let displayName = "Hermes"
@@ -50,6 +56,7 @@ actor HermesBackend: SessionScopedAgentBackend {
     private let configuredProviderResolver: ConfiguredProviderResolver
     private let catalogModelsLoader: CatalogModelsLoader
     private let nousModelsLoader: NousModelsLoader
+    private let sessionModelApplier: SessionModelApplier?
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var clients: [String: ACPClient] = [:]
@@ -63,7 +70,8 @@ actor HermesBackend: SessionScopedAgentBackend {
         conversationHistoryLoader: ConversationHistoryLoader? = nil,
         configuredProviderResolver: ConfiguredProviderResolver? = nil,
         catalogModelsLoader: CatalogModelsLoader? = nil,
-        nousModelsLoader: NousModelsLoader? = nil
+        nousModelsLoader: NousModelsLoader? = nil,
+        sessionModelApplier: SessionModelApplier? = nil
     ) {
         self.context = context
         self.conversationHistoryLoader = conversationHistoryLoader ?? Self.defaultConversationHistoryLoader
@@ -100,6 +108,7 @@ actor HermesBackend: SessionScopedAgentBackend {
             ?? Self.makeCatalogModelsLoader(context: context)
         self.nousModelsLoader = nousModelsLoader
             ?? Self.makeNousModelsLoader(context: context)
+        self.sessionModelApplier = sessionModelApplier
     }
 
     nonisolated private static func makeExecutableResolver(
@@ -256,6 +265,33 @@ actor HermesBackend: SessionScopedAgentBackend {
             throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
         }
         return try await conversationHistoryLoader(context, session.id)
+    }
+
+    /// Live ACP `session/set_model` on an active Hermes session.
+    ///
+    /// Does not restart the process. Callers must pass provider/model already
+    /// split via ``AgentModelPickerID/split(_:)`` — never the raw picker id as
+    /// `modelID` alone when a provider prefix is present.
+    func setSessionModel(
+        session: AgentSession,
+        modelID: String,
+        providerID: String?
+    ) async throws {
+        guard session.backendID == .hermes else {
+            throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
+        }
+        if let sessionModelApplier {
+            try await sessionModelApplier(session.id, modelID, providerID)
+            return
+        }
+        guard let client = clients[session.id] else {
+            throw AgentError(code: "hermes.session-not-active", message: "Hermes session is not active")
+        }
+        try await client.setSessionModel(
+            sessionId: session.id,
+            modelID: modelID,
+            providerID: providerID
+        )
     }
 
     nonisolated private static func defaultConversationHistoryLoader(

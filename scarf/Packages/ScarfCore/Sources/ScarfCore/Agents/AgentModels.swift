@@ -10,6 +10,30 @@ public struct AgentModel: Codable, Equatable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// Split a catalog picker id (`provider:model…`) for ACP `session/set_model`.
+///
+/// Catalog rows use ``HermesModelInfo/id`` shape `providerID + ":" + modelID`.
+/// The model half may contain `/` or additional `:` characters — only the
+/// **first** colon separates provider from model. Passing the full picker id
+/// as `modelID` into ``ACPClient/encodeModelChoice(modelID:providerID:)``
+/// would double-prefix the provider.
+public enum AgentModelPickerID {
+    public static func split(_ pickerID: String) -> (providerID: String?, modelID: String) {
+        let trimmed = pickerID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let colon = trimmed.firstIndex(of: ":") else {
+            return (nil, trimmed)
+        }
+        let provider = String(trimmed[..<colon])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = String(trimmed[trimmed.index(after: colon)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if provider.isEmpty {
+            return (nil, model)
+        }
+        return (provider, model)
+    }
+}
+
 public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public let id: String
     public let backendID: AgentID

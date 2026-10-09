@@ -121,10 +121,10 @@ Full cite: [`documents/research/2026-10-06-claude-cli-bridge-sources.md`](../doc
 2. Claude auth probe — stays `.notProbed` until `claude auth status` / initialize `account` is wired.
 3. Claude slash-command discovery — catalog stays empty until initialize + `commands_changed`.
 4. Multi-agent `models()` — stays `[]` until initialize `models` is wired; Hermes Rich Chat catalog remains authoritative meanwhile.
-5. Codex adapter — roadmap Phase 4; no verified stub plan on this PR.
+5. Codex adapter — roadmap Phase 4; first-slice plan: `documents/plans/2026-10-08-codex-adapter-first-slice.md` (doc only; no product code yet).
 6. Native agent loops / sub-agents — Priority C only; Scarf is not an agent runtime (charter).
 
-**Human decision point:** next implement slice is the verified Claude CLI bridges above; Codex/native-loop still needs an explicit roadmap plan.
+**Human decision point:** Hermes strangler → `AgentChat` (exposes multi-agent set_model), or Codex adapter per `documents/plans/2026-10-08-codex-adapter-first-slice.md`. Native loops stay Priority C.
 
 ### Phase 5 — project preference auth-detail polish (models blocked)
 
@@ -258,15 +258,16 @@ Claude process cleanup is locked without a production change. Conversation close
 
 ## Next lifecycle milestones
 
-1. **Claude structured history — blocked** until a verified protocol or file source exists (do not invent parsers; keep `fetchConversationHistory` as `[]`).
+1. **Claude structured history — still blocked** (re-probed 2026-10-08 against CLI 2.1.289 + cite-only CLUI JSONL reader; see `documents/research/2026-10-08-claude-structured-history-probe.md`). Keep `fetchConversationHistory` as `[]`; do not invent parsers.
 2. ~~Optional GuardedJSONStore adoption for identity/transcript sidecars (transport-safe RMW); keep a single store per file.~~ **Done** — both stores are `GuardedSidecarStore` with `refuseForever`.
 3. ~~Unified extension catalog abstraction (Hermes plugins/skills vs Claude skills vs MCP as distinct sources) — model only, Scarf-native.~~ **Done** — `AgentExtensionDescriptor` / `AgentExtensionCatalog` / `AgentExtensionCatalogs` (distinct kinds; Hermes fixture adapters; Claude + Scarf-local stubs empty; no UI). Multi-Agent Tests [37363578642](https://github.com/dsmithnh3/scarf/actions/runs/37363578642); Compile+macOS+Claude [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 4. ~~Integrate Hermes skills/plugins/MCP read-only into the catalog.~~ **Done** — `AgentExtensionHermesLoaders` + `makeCatalog(fromHermesHome:)` / `makeCatalog(using:)` call `HermesPluginDirectoryScanner`, `SkillsScanner`, and a lightweight config.yaml MCP roster; Claude skill catalog stays empty; no UI. Tests: `AgentExtensionCatalogHermesLoaderTests`. Commits `ce4b7232` / `fda7fcc8`. Multi-Agent+Compile+macOS [37372242630](https://github.com/dsmithnh3/scarf/actions/runs/37372242630); Claude prior [37368212525](https://github.com/dsmithnh3/scarf/actions/runs/37368212525).
 5. ~~Phase 5 diagnostics / preferences / permissions UI on this PR~~ **GREEN / COMPLETE for PR #1** — install/path/version diagnostics, project-default preference (+ auth-detail polish), Hermes credential health, and Scarf-native permission card. Keep the CLUI adoption order unchanged for what remains: Claude history stays blocked; Codex remains later; native agent loops stay Priority C. Hermes Rich Chat pickers stay the management UI for Hermes models; multi-agent `HermesBackend.models()` is a thin read-only bridge over the same catalogs.
 6. ~~Claude `auth status` → initialize → `models()` + slash~~ **Done on this PR** (`6ec474d7`) — CI green [37484422128](https://github.com/dsmithnh3/scarf/actions/runs/37484422128). Claude child env drops harvested `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`. Cite `documents/research/2026-10-06-claude-cli-bridge-sources.md` and `documents/research/2026-10-06-clui-scarf-production-transfer.md`.
 7. **CLUI production-transfer audit (2026-10-06) — read locally.** `/Users/danielsmith/Developer/macOS-CLUI-CC` was audited against Scarf. Ranked steal/adapt/skip: `documents/research/2026-10-06-clui-scarf-production-transfer.md`. Verdict: CLUI does not implement control `initialize` or `claude auth status` and hard-codes opus/sonnet/haiku, so it does **not** change the auth → initialize → models → slash order. Installed CLI checked: 2.1.289. Do not transplant Opal UI.
-8. ~~Read-only extensions browser + thin Hermes `models()`~~ **Done** (`f225304c`) — CI [37640089813](https://github.com/dsmithnh3/scarf/actions/runs/37640089813). Hermes badge stays read-only (no ACP `set_model`).
-9. ~~Claude model Menu + stream-decoder gaps + initialize `agents`→skills~~ **Done on this PR** — Claude Menu restarts with `--model`; `content_block_start` / `input_json_delta` / `rate_limit_event` / `ExitPlanMode` plan callout; initialize agents (`name`/`description`/`model`) feed Claude skill catalog rows. Still deferred: Hermes ACP `set_model`, Claude structured history, Codex, native loops.
+8. ~~Read-only extensions browser + thin Hermes `models()`~~ **Done** (`f225304c`) — CI [37640089813](https://github.com/dsmithnh3/scarf/actions/runs/37640089813).
+9. ~~Claude model Menu + stream-decoder gaps + initialize `agents`→skills~~ **Done on this PR** — Claude Menu restarts with `--model`; stream-decoder gaps; initialize agents → Claude skills.
+10. ~~Hermes multi-agent ACP `session/set_model` (adapter prep)~~ **Done on this PR** — `AgentBackend.setSessionModel` (Hermes via ACP; default throws); `AgentChatViewModel` Hermes live path with first-colon picker split, busy/`isRunning` ignore, failure revert; Claude Process CI filters include model-selection + HermesBackend suites. **Honest framing:** Hermes projects still route to legacy `ChatView` (Rich Chat presets remain live UX); no strangler flip. Claude history still blocked (probe note above). Codex → `documents/plans/2026-10-08-codex-adapter-first-slice.md` (doc only). Native loops stay Priority C.
 
 ## macOS-CLUI-CC adoption analysis
 

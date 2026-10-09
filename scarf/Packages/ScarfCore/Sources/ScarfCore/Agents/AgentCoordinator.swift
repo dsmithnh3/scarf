@@ -110,6 +110,23 @@ public actor AgentCoordinator {
 
     public func cancel(session: AgentSession) async throws { await try requiredBackend(session.backendID).cancel(session: session) }
     public func close(session: AgentSession) async throws { await try requiredBackend(session.backendID).close(session: session) }
+
+    /// Routes a live model switch to the session's backend.
+    ///
+    /// Backends that do not support mid-session model changes throw
+    /// ``AgentError`` with code `agent.set-session-model-unsupported`.
+    public func setSessionModel(
+        session: AgentSession,
+        modelID: String,
+        providerID: String?
+    ) async throws {
+        try await requiredBackend(session.backendID).setSessionModel(
+            session: session,
+            modelID: modelID,
+            providerID: providerID
+        )
+    }
+
     public func latestRoutedEventSequence() -> UInt64 { routedEventSequence }
 
     private func requiredBackend(_ id: AgentID) async throws -> any AgentBackend {

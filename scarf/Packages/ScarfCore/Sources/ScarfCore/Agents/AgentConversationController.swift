@@ -257,6 +257,28 @@ public actor AgentConversationController {
         try await coordinator.cancel(session: session)
     }
 
+    /// Live mid-session model switch for backends that support it (Hermes ACP
+    /// `session/set_model`). Failures surface on ``AgentConversationState/error``
+    /// and rethrow so callers can revert optimistic UI.
+    public func setSessionModel(modelID: String, providerID: String?) async throws {
+        guard let session = activeSession else {
+            throw AgentConversationControllerError.noActiveSession
+        }
+        do {
+            try await coordinator.setSessionModel(
+                session: session,
+                modelID: modelID,
+                providerID: providerID
+            )
+        } catch {
+            surfaceConversationError(
+                code: "conversation.set-model-failed",
+                underlying: error
+            )
+            throw error
+        }
+    }
+
     public func close() async throws {
         guard let session = activeSession else {
             throw AgentConversationControllerError.noActiveSession

@@ -111,10 +111,19 @@ final class AgentChatViewModel {
         AgentPermissionPresenter.presentation(from: state)
     }
 
-    /// Claude exposes a launch-time model menu. Hermes stays badge-only —
-    /// no ACP `set_model` in this slice.
+    /// Claude always exposes a launch-time model menu. Hermes exposes the
+    /// picker API when catalog models are non-empty (live ACP `set_model`).
+    /// Hermes projects still route to legacy `ChatView` today — this path is
+    /// adapter prep for a future strangler cutover.
     var supportsModelPicker: Bool {
-        backendID == .claudeCode
+        switch backendID {
+        case .claudeCode:
+            return true
+        case .hermes:
+            return !availableModels.isEmpty
+        default:
+            return false
+        }
     }
 
     func start() async {
@@ -162,23 +171,51 @@ final class AgentChatViewModel {
         availableModels = await modelsLoader()
     }
 
-    /// Claude: close and recreate the session with `--model`. Same id is a
-    /// no-op. Hermes callers must not use this path (`supportsModelPicker`).
+    /// Claude: close and recreate the session with `--model`.
+    /// Hermes: live ACP `session/set_model` (no restart); revert on failure.
+    /// Same id is a no-op. Ignored while a turn is running or a switch is in flight.
     func selectModel(id: String) async {
         guard supportsModelPicker else { return }
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != selectedModelID else { return }
-        guard !isChangingModel else { return }
+        guard !isChangingModel, !state.isRunning else { return }
 
         isChangingModel = true
         defer { isChangingModel = false }
 
-        selectedModelID = trimmed
-        await close()
-        await start()
+        switch backendID {
+        case .claudeCode:
+            selectedModelID = trimmed
+            await close()
+            await start()
+        case .hermes:
+            let previous = selectedModelID
+            selectedModelID = trimmed
+            let parts = AgentModelPickerID.split(trimmed)
+            do {
+                try await controller.setSessionModel(
+                    modelID: parts.modelID,
+                    providerID: parts.providerID
+                )
+            } catch {
+                selectedModelID = previous
+            }
+        default:
+            return
+        }
     }
 
-    /// Badge / menu label. Selected Claude model wins; otherwise a single
+    /// Help text for the model menu — Claude restarts; Hermes switches live.
+    var modelPickerHelp: String {
+        switch backendID {
+        case .hermes:
+            return "Switch the Hermes session model via ACP (live)"
+        default:
+            return "Restart this Claude session with the selected model"
+        }
+    }
+
+    /// Badge / menu label. Selected model wins; otherwise a single
     /// advertised name, a count, or nil while empty.
     var modelBadgeLabel: String? {
         if let selectedModelID,

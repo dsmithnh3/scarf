@@ -119,4 +119,71 @@ struct HermesBackendTests {
             #expect(try await backend.models().isEmpty)
         }
     }
+
+    @Test("setSessionModel routes through the applier with provider and model split")
+    func setSessionModelUsesApplier() async throws {
+        final class Box: @unchecked Sendable {
+            var calls: [(String, String, String?)] = []
+        }
+        let box = Box()
+        let backend = HermesBackend(
+            context: .local,
+            installationProbe: { .available(version: "test") },
+            sessionModelApplier: { sessionID, modelID, providerID in
+                box.calls.append((sessionID, modelID, providerID))
+            }
+        )
+        let session = AgentSession(id: "sess-1", backendID: .hermes)
+        let parts = AgentModelPickerID.split("openrouter:anthropic/claude-sonnet-5")
+        try await backend.setSessionModel(
+            session: session,
+            modelID: parts.modelID,
+            providerID: parts.providerID
+        )
+        #expect(box.calls.count == 1)
+        #expect(box.calls[0].0 == "sess-1")
+        #expect(box.calls[0].1 == "anthropic/claude-sonnet-5")
+        #expect(box.calls[0].2 == "openrouter")
+    }
+
+    @Test("setSessionModel without applier or active client fails")
+    func setSessionModelRequiresActiveSession() async {
+        let backend = HermesBackend(
+            context: .local,
+            installationProbe: { .available(version: "test") }
+        )
+        let session = AgentSession(id: "missing", backendID: .hermes)
+        do {
+            try await backend.setSessionModel(session: session, modelID: "m", providerID: "p")
+            Issue.record("Expected session-not-active")
+        } catch let error as AgentError {
+            #expect(error.code == "hermes.session-not-active")
+        } catch {
+            Issue.record("Unexpected error \(error)")
+        }
+    }
+
+    @Test("setSessionModel applier errors propagate (busy)")
+    func setSessionModelPropagatesBusy() async {
+        let backend = HermesBackend(
+            context: .local,
+            installationProbe: { .available(version: "test") },
+            sessionModelApplier: { _, _, _ in
+                throw AgentError(
+                    code: "hermes.set-model-busy",
+                    message: "Session is busy",
+                    isRecoverable: true
+                )
+            }
+        )
+        let session = AgentSession(id: "sess-busy", backendID: .hermes)
+        do {
+            try await backend.setSessionModel(session: session, modelID: "m", providerID: "openrouter")
+            Issue.record("Expected busy error")
+        } catch let error as AgentError {
+            #expect(error.code == "hermes.set-model-busy")
+        } catch {
+            Issue.record("Unexpected error \(error)")
+        }
+    }
 }
