@@ -147,6 +147,9 @@ struct TemplateInstallSheet: View {
                 // inner VStack — propagate the ScrollView's width down
                 // so inner Text wraps instead of expanding outward.
                 VStack(alignment: .leading, spacing: 16) {
+                    if !plan.miniApps.isEmpty {
+                        miniAppsSection(plan: plan)
+                    }
                     projectFilesSection(plan: plan)
                     if plan.skillsNamespaceDir != nil {
                         skillsSection(plan: plan)
@@ -222,6 +225,29 @@ struct TemplateInstallSheet: View {
                        ScarfLinkPolicy.allows(parsed) {
                         Link(parsed.host ?? url, destination: parsed)
                             .font(.caption)
+                    }
+                }
+            }
+        }
+    }
+
+    private func miniAppsSection(plan: TemplateInstallPlan) -> some View {
+        section(
+            title: "Mini-apps",
+            subtitle: "Copied into the project. Install does not grant permissions, start a session, or run scripts."
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(plan.miniApps, id: \.id) { app in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(app.name).font(.callout)
+                        Text(app.id)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                        Text(app.permissions.isEmpty
+                             ? "No permissions declared"
+                             : "Declares: " + app.permissions.joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

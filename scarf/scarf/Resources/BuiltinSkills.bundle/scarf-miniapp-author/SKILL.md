@@ -69,7 +69,7 @@ Do **not** invoke for: editing the project's `dashboard.json` (that's the Dashbo
 | `scarf.ui.resize(w, h)` | — | — | layout hint |
 | `scarf.ui.requestClose()` | — | — | asks the host to close the app |
 | `scarf.store.get(key)` / `scarf.store.set(key, value)` | `store` | no | per-(project, mini-app) persisted KV (JSON values); `get` → value or `null`, `set` → `true` |
-| `scarf.query(kind)` | `query:<kind>` | no | rows for `kind` as a JSON array. Implemented: `"kanban.tasks"`; any other kind replies `not_implemented`. (A 2nd `params` argument is accepted but **reserved — ignored in v1**.) |
+| `scarf.query(kind)` | `query:<kind>` | depends | rows for `kind` as a JSON array. Implemented: `"kanban.tasks"` (not sensitive) and `"cron.status"` (sensitive, local projects only: `id`, `name`, `schedule`, `enabled`, `state` — no prompt, script, or run output). `"cron.jobs"` is not implemented. Any other kind replies `not_implemented`. (A 2nd `params` argument is accepted but **reserved — ignored in v1**.) |
 | `scarf.kanban.read()` | `query:kanban.tasks` | no | array of the project's Kanban tasks (tenant-scoped); `[]` if none |
 | `scarf.file.read(path)` | `file:read` | no | UTF-8 contents of a project file (path is **relative to the project root**, read-only, ≤4 MB, contained — no escaping the project) |
 | `scarf.prompt(text, opts?)` | `prompt` | **yes** | sends a prompt to the project's bound agent session → resolves to the agent's final text (string); stream incremental output via `scarf.onEvent` |
@@ -128,6 +128,8 @@ What the host enforces, so you can design for it:
 3. **Never assume secrets/config/filesystem-at-large.** The bridge cannot reach `~/.hermes`, `config.yaml`, `auth.json`, env, or tools — by design.
 4. **Degrade gracefully.** Check `scarf.version` if you need a newer bridge; handle empty/permission-denied results without crashing the UI.
 5. Keep it small and legible — a single `index.html` with inline `<style>`/`<script>` is ideal for a starter.
+
+`display: grid-lanes` and `appearance: base-select` are optional inline CSS. Write a plain grid and a plain `<select>` that work without them; the embedded WebKit is the user's OS, not Safari 27.
 
 ## Minimal working example — a Kanban task board
 

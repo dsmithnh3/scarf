@@ -53,6 +53,11 @@ final class HermesFileWatcher {
     private(set) var projectArmCount = 0
     /// Test seam: the paths handed to the remote poller, project half only.
     var remoteWatchedProjectPaths: [String] { remoteProjectPaths }
+    /// Dashboard, `.scarf/` dirs, and the open dashboard's file-reading
+    /// widget paths. Sidecars survive a registry reload that passes nil.
+    private var projectWatchSet = ProjectWatchSet()
+    /// Test seam: the sidecar files currently folded into the project set.
+    var watchedSidecarPaths: [String] { projectWatchSet.sidecarPaths }
     /// Test seam: counts poller restarts so a test can prove a no-op update
     /// didn't restart it.
     private(set) var remoteRestartCount = 0
@@ -289,6 +294,11 @@ final class HermesFileWatcher {
         unarmedCorePaths.removeAll()
         unarmedProjectPaths.removeAll()
         remoteProjectPaths.removeAll()
+        // Sidecar paths stay. The next `updateProjectWatches` from a
+        // registry reload passes nil for them; forgetting them here would
+        // drop the open dashboard's file watches until the cockpit
+        // reinstalled the list. Sources are already cancelled above, so
+        // the next update re-arms the union.
         // A full stop means the next start has no idea what happened while
         // we were away, so it must baseline afresh rather than compare
         // against signatures from before the gap.
@@ -303,15 +313,20 @@ final class HermesFileWatcher {
         burstStartDate = nil
     }
 
-    /// Watch each project's `dashboard.json` AND its enclosing `.scarf/`
-    /// directory. Watching both is what lets file-reading widgets
-    /// (markdown_file, log_tail, image) refresh when a cron job rewrites
-    /// a sidecar file: dir-level FSEvents fire on add/remove/rename inside
-    /// `.scarf/`, file-level FSEvents fire on dashboard.json content
-    /// changes. In-place writes to an existing sidecar file (e.g., `>>` log
-    /// append) are NOT detected — by convention the cron job should write
-    /// atomically (write-then-rename) or `touch dashboard.json` after each
-    /// run.
+    /// Watch each project's `dashboard.json`, its enclosing `.scarf/`
+    /// directory, and the resolved files a visible dashboard's
+    /// `log_tail`, `markdown_file`, and local `image` widgets read.
+    ///
+    /// A directory vnode event does not fire on an in-place append, and a
+    /// log outside `.scarf/` (for example `reports/uptime.log`) is not in
+    /// that directory. Those paths are the sidecar list: a local
+    /// `DispatchSource` on the file (`.write` and `.extend`, plus the
+    /// rename/delete mask `makeSource` already uses) and, remotely, a
+    /// `stat` of the file in the existing poller. `sidecarPaths == nil`
+    /// keeps the list the open dashboard installed, so a registry reload
+    /// does not wipe it. Archived projects never appear in `scarfDirs`,
+    /// and sidecars outside the remaining projects are dropped.
+    ///
     /// **DIFFED, not rebuilt.** Every caller of this is downstream of a
     /// registry reload, and the busiest one is the coalesced tick — which
     /// hands over a path set identical to the current one on essentially
@@ -321,13 +336,37 @@ final class HermesFileWatcher {
     ///
     /// So: compute the target set, and touch only what actually differs.
     /// An unchanged set is a no-op — no cancels, no opens, no restart.
-    func updateProjectWatches(dashboardPaths: [String], scarfDirs: [String]) {
-        let target = Set(dashboardPaths + scarfDirs)
+    func updateProjectWatches(
+        dashboardPaths: [String],
+        scarfDirs: [String],
+        sidecarPaths: [String]? = nil
+    ) {
+        projectWatchSet.update(
+            dashboardPaths: dashboardPaths,
+            scarfDirs: scarfDirs,
+            sidecarPaths: sidecarPaths
+        )
+        applyProjectWatches()
+    }
+
+    /// Install the open dashboard's contained file paths. Does not touch
+    /// the dashboard / `.scarf/` set a registry reload owns. Capped at
+    /// `ProjectWatchSet.sidecarCap`.
+    func updateSidecarWatches(_ sidecarPaths: [String]) {
+        let capped = ProjectWatchSet.capped(sidecarPaths)
+        guard capped != projectWatchSet.sidecarPaths else { return }
+        projectWatchSet.replaceSidecars(capped)
+        applyProjectWatches()
+    }
+
+    private func applyProjectWatches() {
+        let target = Set(projectWatchSet.union)
         if context.isRemote {
             // The SSH poller stats the union of core + project paths.
             // `stat` on a directory tracks mtime, which ticks on
-            // add/remove/rename inside the dir — same coverage as the local
-            // FSEvents directory watch below.
+            // add/remove/rename inside the dir. `stat` on a sidecar file
+            // tracks that file's mtime and size, so an in-place append
+            // outside `.scarf/` is a change too.
             let sorted = target.sorted()
             guard sorted != remoteProjectPaths else { return }
             remoteProjectPaths = sorted

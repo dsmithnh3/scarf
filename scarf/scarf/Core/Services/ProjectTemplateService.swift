@@ -29,7 +29,7 @@ struct ProjectTemplateService: Sendable {
     /// Manifest `schemaVersion`s this build can install. Must stay in step
     /// with `SUPPORTED_SCHEMA_VERSIONS` in `tools/build-catalog.py` and with
     /// the highest version `ProjectTemplateExporter` writes.
-    nonisolated static let supportedSchemaVersions: ClosedRange<Int> = 1...3
+    nonisolated static let supportedSchemaVersions: ClosedRange<Int> = 1...4
 
     let context: ServerContext
 
@@ -66,11 +66,9 @@ struct ProjectTemplateService: Sendable {
         }
 
         // schemaVersion 1 is the original v2.2 bundle; 2 adds the
-        // optional `config` block; 3 adds project slash commands, which
-        // `ProjectTemplateExporter` writes whenever a project has any and
-        // `tools/build-catalog.py` accepts. All three are valid. Newer
-        // versions get refused so the installer never silently
-        // misinterprets a future-shape bundle.
+        // optional `config` block; 3 adds project slash commands; 4 adds
+        // claimed mini-apps. Newer versions get refused so an older Scarf
+        // never silently skips a schema-4 bundle's mini-apps.
         guard Self.supportedSchemaVersions.contains(manifest.schemaVersion) else {
             throw ProjectTemplateError.unsupportedSchemaVersion(manifest.schemaVersion)
         }
@@ -91,6 +89,7 @@ struct ProjectTemplateService: Sendable {
         let files = try Self.walk(unpackedDir)
         let cronJobs = try Self.readCronJobs(unpackedDir: unpackedDir)
         try Self.verifyClaims(manifest: manifest, files: files, cronJobCount: cronJobs.count)
+        try Self.verifyMiniAppIdentities(manifest: manifest, unpackedDir: unpackedDir)
 
         return TemplateInspection(
             manifest: manifest,
@@ -166,6 +165,36 @@ struct ProjectTemplateService: Sendable {
                     destinationPath: projectDir + "/.scarf/slash-commands/" + slashName + ".md"
                 )
             )
+        }
+
+        // Mini-apps (manifest schemaVersion 4). Copy each claimed tree
+        // into `<project>/.scarf/miniapps/<id>/`. `state.json` is rejected
+        // at inspect time. Copying files does not grant permissions, start
+        // a session, or run a script.
+        var miniApps: [TemplateMiniAppClaim] = []
+        for id in (manifest.contents.miniApps ?? []) {
+            let prefix = "miniapps/" + id + "/"
+            let claimedFiles = inspection.files.filter { $0.hasPrefix(prefix) }
+            guard claimedFiles.contains(prefix + "miniapp.json") else {
+                throw ProjectTemplateError.requiredFileMissing(prefix + "miniapp.json")
+            }
+            let manifestURL = URL(fileURLWithPath: inspection.unpackedDir + "/" + prefix + "miniapp.json")
+            let decoded = try JSONDecoder().decode(MiniAppManifest.self, from: Data(contentsOf: manifestURL))
+            miniApps.append(
+                TemplateMiniAppClaim(
+                    id: id,
+                    name: decoded.name,
+                    permissions: decoded.permissions.map(\.rawValue)
+                )
+            )
+            for relative in claimedFiles {
+                projectFiles.append(
+                    TemplateFileCopy(
+                        sourceRelativePath: relative,
+                        destinationPath: projectDir + "/.scarf/" + relative
+                    )
+                )
+            }
         }
 
         // Namespaced skills: copied wholesale from skills/<name>/** into
@@ -275,7 +304,8 @@ struct ProjectTemplateService: Sendable {
             projectRegistryName: Self.uniqueProjectName(preferred: manifest.name, context: context),
             configSchema: configSchema,
             configValues: [:],   // filled in by TemplateInstallerViewModel before install()
-            manifestCachePath: manifestCachePath
+            manifestCachePath: manifestCachePath,
+            miniApps: miniApps
         )
     }
 
@@ -705,6 +735,38 @@ struct ProjectTemplateService: Sendable {
         for skill in job.skills ?? [] { try check(skill, "skill") }
     }
 
+    /// `miniapp.json`'s `id` must be the directory name. `verifyClaims`
+    /// only sees relative paths, so this reads the unpacked file.
+    nonisolated private static func verifyMiniAppIdentities(
+        manifest: ProjectTemplateManifest,
+        unpackedDir: String
+    ) throws {
+        for id in manifest.contents.miniApps ?? [] {
+            let path = unpackedDir + "/miniapps/" + id + "/miniapp.json"
+            let data: Data
+            do {
+                data = try Data(contentsOf: URL(fileURLWithPath: path))
+            } catch {
+                throw ProjectTemplateError.manifestParseFailed(
+                    "miniapps/\(id)/miniapp.json: \(error.localizedDescription)"
+                )
+            }
+            let decoded: MiniAppManifest
+            do {
+                decoded = try JSONDecoder().decode(MiniAppManifest.self, from: data)
+            } catch {
+                throw ProjectTemplateError.manifestParseFailed(
+                    "miniapps/\(id)/miniapp.json: \(error.localizedDescription)"
+                )
+            }
+            if decoded.id != id {
+                throw ProjectTemplateError.contentClaimMismatch(
+                    "miniapps/\(id)/miniapp.json id is \"\(decoded.id)\"; it must match the directory name"
+                )
+            }
+        }
+    }
+
     /// Verify the manifest's `contents` claim exactly matches the unpacked
     /// files. Any mismatch — claimed-but-missing or present-but-unclaimed —
     /// throws, so the preview sheet the user sees is always accurate.
@@ -815,6 +877,44 @@ struct ProjectTemplateService: Sendable {
         } else if fileSet.contains(where: { $0.hasPrefix("slash-commands/") }) {
             throw ProjectTemplateError.contentClaimMismatch(
                 "bundle contains slash-commands/ but manifest.contents.slashCommands is missing"
+            )
+        }
+
+        // Mini-apps (manifest schemaVersion 4). The claim is the id list.
+        // Every file under `miniapps/` must sit in a claimed id directory,
+        // that directory must contain `miniapp.json`, and `state.json`
+        // never ships — it is per-install runtime state.
+        if let claimed = manifest.contents.miniApps {
+            for id in claimed {
+                if let reason = ProjectSlashCommand.validateName(id) {
+                    throw ProjectTemplateError.contentClaimMismatch(
+                        "manifest.contents.miniApps lists \"\(id)\": \(reason)"
+                    )
+                }
+                let manifestPath = "miniapps/" + id + "/miniapp.json"
+                if !fileSet.contains(manifestPath) {
+                    throw ProjectTemplateError.contentClaimMismatch(
+                        "manifest lists mini-app \(id) but \(manifestPath) is missing from the bundle"
+                    )
+                }
+            }
+            let present = fileSet.filter { $0.hasPrefix("miniapps/") }
+            if let state = present.first(where: { ($0 as NSString).lastPathComponent == "state.json" }) {
+                throw ProjectTemplateError.contentClaimMismatch(
+                    "bundle contains \(state); mini-app state.json is not part of a template"
+                )
+            }
+            let claimedPrefixes = Set(claimed.map { "miniapps/\($0)/" })
+            if let extra = present.first(where: { path in
+                !claimedPrefixes.contains(where: { path.hasPrefix($0) })
+            }) {
+                throw ProjectTemplateError.contentClaimMismatch(
+                    "bundle contains \(extra) but it's not listed in manifest.contents.miniApps"
+                )
+            }
+        } else if fileSet.contains(where: { $0.hasPrefix("miniapps/") }) {
+            throw ProjectTemplateError.contentClaimMismatch(
+                "bundle contains miniapps/ but manifest.contents.miniApps is missing"
             )
         }
 

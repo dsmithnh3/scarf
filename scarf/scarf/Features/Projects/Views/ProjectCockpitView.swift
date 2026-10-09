@@ -76,7 +76,17 @@ struct ProjectCockpitView: View {
             vm.capabilitiesStore = capabilitiesStore
             viewModel = vm
             await vm.load()
-            if vm.dashboard != nil { selectedPanel = .dashboard }
+            // A shortcut that landed during the load already set Board.
+            // Don't replace it with Dashboard.
+            if !applyBoardRequestIfReady(), selectedPanel != .board, vm.dashboard != nil {
+                selectedPanel = .dashboard
+            }
+        }
+        .onChange(of: coordinator.openBoardRequested) { _, _ in
+            _ = applyBoardRequestIfReady()
+        }
+        .onChange(of: capabilitiesStore?.capabilities.hasKanban) { _, _ in
+            _ = applyBoardRequestIfReady()
         }
         .onChange(of: hintDeliveryConfirmed) {
             // The version probe can answer after the cockpit opened (a slow
@@ -298,33 +308,149 @@ struct ProjectCockpitView: View {
         }
     }
 
-    private var panelBar: some View {
-        HStack(spacing: 0) {
-            ForEach(visiblePanels, id: \.self) { panel in
-                Button {
-                    selectedPanel = panel
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: panel.systemImage)
-                            .font(.caption)
-                        Text(panel.title)
-                            .font(.subheadline)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(selectedPanel == panel ? ScarfColor.accentTint : Color.clear)
-                    .foregroundStyle(selectedPanel == panel ? ScarfColor.accentActive : ScarfColor.foregroundMuted)
-                    .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.md))
-                }
-                .buttonStyle(.plain)
-                // The active tab is tinted and nothing else; without the
-                // trait VoiceOver cannot tell which panel is showing.
-                .accessibilityAddTraits(selectedPanel == panel ? [.isSelected] : [])
+    /// Apply a pending "Open the task board" request. Returns whether the
+    /// Board is now showing. A host without Kanban leaves the request
+    /// unconsumed so a later capability probe can still honor it, and
+    /// never switches the panel.
+    private func applyBoardRequestIfReady() -> Bool {
+        guard coordinator.openBoardRequested else { return false }
+        guard capabilitiesStore?.capabilities.hasKanban == true else { return false }
+        coordinator.openBoardRequested = false
+        selectedPanel = .board
+        return true
+    }
+
+    /// Always on the bar: the panels someone opens a project to reach.
+    private var pinnedPanels: [CockpitPanel] {
+        visiblePanels.filter { panel in
+            switch panel {
+            case .dashboard, .sessions, .board: return true
+            default: return false
             }
-            Spacer()
         }
+    }
+
+    /// Read-only reference. A menu, not a row of buttons.
+    private var referencePanels: [CockpitPanel] {
+        visiblePanels.filter { panel in
+            switch panel {
+            case .context, .memory, .secrets, .templates: return true
+            default: return false
+            }
+        }
+    }
+
+    /// Own buttons on a wide window. They move into More when the bar
+    /// cannot hold them. Order is the one the bar should read in.
+    private var workPanels: [CockpitPanel] {
+        let order: [CockpitPanel] = [.cron, .slash, .site, .skills, .miniapps, .fleet]
+        return order.filter { visiblePanels.contains($0) }
+    }
+
+    private var panelBar: some View {
+        // Not a toolbar. `ViewThatFits` keeps the work buttons when the
+        // window is wide and folds them into More when it is not.
+        ViewThatFits(in: .horizontal) {
+            panelBarRow(work: workPanels, overflow: [])
+                .fixedSize(horizontal: true, vertical: false)
+            panelBarRow(work: [], overflow: workPanels)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .scarfChromeGlass()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Project panels"))
+    }
+
+    private func panelBarRow(work: [CockpitPanel], overflow: [CockpitPanel]) -> some View {
+        HStack(spacing: 0) {
+            ForEach(pinnedPanels, id: \.self) { panelButton($0) }
+            ForEach(work, id: \.self) { panelButton($0) }
+            if !overflow.isEmpty {
+                panelMenu(
+                    title: "More",
+                    systemImage: "ellipsis.circle",
+                    sections: [
+                        (title: "More", panels: overflow),
+                        (title: "Reference", panels: referencePanels),
+                    ]
+                )
+            } else if !referencePanels.isEmpty {
+                panelMenu(
+                    title: "Reference",
+                    systemImage: "books.vertical",
+                    sections: [(title: nil, panels: referencePanels)]
+                )
+            }
+        }
+    }
+
+    private func panelButton(_ panel: CockpitPanel) -> some View {
+        Button {
+            selectedPanel = panel
+        } label: {
+            panelChrome(title: panel.title, systemImage: panel.systemImage, selected: selectedPanel == panel)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selectedPanel == panel ? [.isSelected] : [])
+    }
+
+    /// When the selected panel lives in this menu, the menu's title is
+    /// that panel's name and it keeps the selected trait.
+    private func panelMenu(
+        title: String,
+        systemImage: String,
+        sections: [(title: String?, panels: [CockpitPanel])]
+    ) -> some View {
+        let panels = sections.flatMap(\.panels)
+        let selectedHere = panels.contains(selectedPanel)
+        return Menu {
+            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                if !section.panels.isEmpty {
+                    if let sectionTitle = section.title {
+                        Section(sectionTitle) {
+                            panelMenuButtons(section.panels)
+                        }
+                    } else {
+                        panelMenuButtons(section.panels)
+                    }
+                }
+            }
+        } label: {
+            panelChrome(
+                title: selectedHere ? selectedPanel.title : title,
+                systemImage: selectedHere ? selectedPanel.systemImage : systemImage,
+                selected: selectedHere
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel(Text(selectedHere ? selectedPanel.title : title))
+        .accessibilityAddTraits(selectedHere ? [.isSelected] : [])
+    }
+
+    @ViewBuilder
+    private func panelMenuButtons(_ panels: [CockpitPanel]) -> some View {
+        ForEach(panels, id: \.self) { panel in
+            Button {
+                selectedPanel = panel
+            } label: {
+                Label(panel.title, systemImage: panel.systemImage)
+            }
+        }
+    }
+
+    private func panelChrome(title: String, systemImage: String, selected: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.caption)
+            Text(title)
+                .font(.subheadline)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(selected ? ScarfColor.accentTint : Color.clear)
+        .foregroundStyle(selected ? ScarfColor.accentActive : ScarfColor.foregroundMuted)
+        .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.md))
     }
 
     // MARK: - Panel content
@@ -341,6 +467,7 @@ struct ProjectCockpitView: View {
                 projectRoot: project.path,
                 isLoading: viewModel?.isLoading ?? true
             )
+            .environment(\.dashboardProject, project)
         case .sessions:
             // Reuse the existing per-project Sessions view verbatim.
             ProjectSessionsView(project: project)
@@ -462,6 +589,7 @@ private struct CockpitDashboardPanel: View {
     let isLoading: Bool
 
     @Environment(\.serverContext) private var serverContext
+    @Environment(HermesFileWatcher.self) private var fileWatcher
     /// `projectRoot` as the widgets see it, and the host's homes for the
     /// root policy — resolved off the main actor by `.task`. A remote
     /// template install from before B03 is registered as `~/projects/<slug>`;
@@ -526,6 +654,13 @@ private struct CockpitDashboardPanel: View {
             let result = await WidgetPathResolver.resolveRoot(projectRoot, context: serverContext)
             guard !Task.isCancelled else { return }
             resolved = result
+        }
+        // Resolved `log_tail` / `markdown_file` / local `image` paths,
+        // including files outside `.scarf/`. A registry reload passes nil
+        // sidecars and must not wipe this list; switching dashboards
+        // replaces it. The watcher caps the list.
+        .onChange(of: widgetFilePaths, initial: true) { _, paths in
+            fileWatcher.updateSidecarWatches(paths)
         }
     }
 }

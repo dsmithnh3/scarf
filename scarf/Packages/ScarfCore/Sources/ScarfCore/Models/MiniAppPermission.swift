@@ -131,15 +131,34 @@ public enum MiniAppPermission: Codable, Sendable, Hashable {
     /// agent-generated apps). Everything else — `sessions`, `messages`,
     /// `insights.*`, `cron.*`, or any unknown kind — is treated as sensitive
     /// so a privacy-relevant kind can never be granted-by-default to
-    /// untrusted web the moment it's wired host-side. Today only
-    /// `kanban.tasks` is implemented, and it's read-only board data.
+    /// untrusted web the moment it's wired host-side. `kanban.tasks` is
+    /// the only non-sensitive kind. `cron.status` is implemented and stays
+    /// sensitive; `cron.jobs` is not this kind and stays `not_implemented`.
     public static let nonSensitiveQueryKinds: Set<String> = ["kanban.tasks"]
+
+    /// Whether this build can exercise the surface. `file:write`,
+    /// `kanban:write`, and `net` are names with no handler. They stay in
+    /// the enum so old manifests still decode, and they are never granted:
+    /// a tick stored under these raw strings must not become live if a
+    /// handler is added later. A future implementation uses a new id.
+    public var isWired: Bool {
+        switch self {
+        case .fileWrite, .kanbanWrite, .net: return false
+        default: return true
+        }
+    }
+
+    /// Drop permissions this build cannot exercise. Callers that persist or
+    /// apply a grant use this so an old tick cannot reach the bridge.
+    public static func wired(_ permissions: Set<MiniAppPermission>) -> Set<MiniAppPermission> {
+        permissions.filter(\.isWired)
+    }
 
     /// Surfaces that reach beyond a mini-app's own, structured, read-only
     /// data: outbound network, filesystem reads/writes, kanban mutation, and
     /// any non-allowlisted query kind. The preview sheet flags these with a
-    /// warning and — for agent-generated mini-apps — leaves them UNCHECKED,
-    /// so running such an app never silently grants one (`defaultChecked()`).
+    /// warning and leaves them unchecked, so running an app never silently
+    /// grants one (`defaultChecked()`).
     public var isSensitive: Bool {
         switch self {
         // `prompt` drives a tool-enabled agent with web-supplied text — the

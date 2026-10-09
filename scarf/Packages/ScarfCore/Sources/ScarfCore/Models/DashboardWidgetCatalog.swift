@@ -138,13 +138,13 @@ public enum DashboardWidgetCatalog {
         // `url` is the OTHER path-carrying field: a `webview` or `image`
         // pointing at `file:///Users/…/.ssh/id_rsa` would pass a check
         // that only looked at `path`, and the renderer would happily load
-        // it. Remote widgets take remote URLs.
+        // it. Both renderers accept https with a host and refuse http
+        // (plaintext is interceptable) and every other scheme.
         if let url = widget.url, !url.isEmpty {
             let scheme = url.prefix { $0 != ":" }.lowercased()
-            let allowed = ["http", "https"]
-            if !allowed.contains(scheme) {
+            if scheme != "https" {
                 problems.append(
-                    "\(path).url: must be an http:// or https:// URL"
+                    "\(path).url: must be an https:// URL"
                         + " (use \"path\" for a file inside the project)"
                 )
             }

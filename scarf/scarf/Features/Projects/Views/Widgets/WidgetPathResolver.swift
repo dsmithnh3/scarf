@@ -24,6 +24,12 @@ private struct SelectedProjectHostHomesKey: EnvironmentKey {
     static let defaultValue: WidgetHostHomes? = nil
 }
 
+/// The registry row for the dashboard on screen. `kanban_summary` uses it
+/// to mint a tenant; nil when no project dashboard is showing.
+private struct DashboardProjectKey: EnvironmentKey {
+    static let defaultValue: ProjectEntry? = nil
+}
+
 extension EnvironmentValues {
     var selectedProjectRoot: String? {
         get { self[SelectedProjectRootKey.self] }
@@ -32,6 +38,10 @@ extension EnvironmentValues {
     var selectedProjectHostHomes: WidgetHostHomes? {
         get { self[SelectedProjectHostHomesKey.self] }
         set { self[SelectedProjectHostHomesKey.self] = newValue }
+    }
+    var dashboardProject: ProjectEntry? {
+        get { self[DashboardProjectKey.self] }
+        set { self[DashboardProjectKey.self] = newValue }
     }
 }
 

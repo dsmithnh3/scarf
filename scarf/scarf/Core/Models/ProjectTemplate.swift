@@ -86,6 +86,33 @@ nonisolated struct TemplateContents: Codable, Sendable, Equatable {
     /// installer copies them to `<project>/.scarf/slash-commands/<n>.md`
     /// on install. `nil` or `[]` means the template ships no commands.
     let slashCommands: [String]?
+    /// Mini-app ids this bundle ships (manifest schemaVersion 4). Each
+    /// id is a directory `miniapps/<id>/` whose `miniapp.json` `id`
+    /// matches the directory. `state.json` is never part of the bundle.
+    /// `nil` means the template ships no mini-apps.
+    let miniApps: [String]?
+
+    init(
+        dashboard: Bool,
+        agentsMd: Bool,
+        instructions: [String]?,
+        skills: [String]?,
+        cron: Int?,
+        memory: TemplateMemoryClaim?,
+        config: Int?,
+        slashCommands: [String]?,
+        miniApps: [String]? = nil
+    ) {
+        self.dashboard = dashboard
+        self.agentsMd = agentsMd
+        self.instructions = instructions
+        self.skills = skills
+        self.cron = cron
+        self.memory = memory
+        self.config = config
+        self.slashCommands = slashCommands
+        self.miniApps = miniApps
+    }
 }
 
 nonisolated struct TemplateMemoryClaim: Codable, Sendable, Equatable {
@@ -182,6 +209,11 @@ nonisolated struct TemplateInstallPlan: Sendable {
     /// offline. `nil` when `configSchema` is nil.
     let manifestCachePath: String?
 
+    /// Mini-apps the installer will copy into `<project>/.scarf/miniapps/`.
+    /// The preview lists each id and the permissions its manifest declares.
+    /// Install copies files only: no grant, no session, no script.
+    let miniApps: [TemplateMiniAppClaim]
+
     /// Convenience: total number of writes (files + cron jobs + optional
     /// memory append + registry append + optional config.json + one
     /// entry per secret written to the Keychain). Displayed in the
@@ -199,6 +231,14 @@ nonisolated struct TemplateInstallPlan: Sendable {
             + configFileCount
             + secretCount
     }
+}
+
+/// One mini-app a schema-4 bundle claims, for the install preview.
+nonisolated struct TemplateMiniAppClaim: Sendable, Equatable {
+    let id: String
+    let name: String
+    /// Permission strings declared in `miniapp.json`. Not granted by install.
+    let permissions: [String]
 }
 
 /// A single file to copy from the unpacked bundle into a target directory.
@@ -243,6 +283,40 @@ nonisolated struct TemplateLock: Codable, Sendable {
     /// user added to `<project>/.scarf/slash-commands/` after install.
     /// Optional for back-compat with pre-v2.5 lock files.
     let slashCommandFiles: [String]?
+    /// Mini-app ids the installer copied. The uninstaller removes those
+    /// trees' locked files and an id directory only when it is empty
+    /// afterwards, so a user-added app or a later `state.json` stays.
+    let miniAppIds: [String]?
+
+    init(
+        templateId: String,
+        templateVersion: String,
+        templateName: String,
+        installedAt: String,
+        projectFiles: [String],
+        skillsNamespaceDir: String?,
+        skillsFiles: [String],
+        cronJobNames: [String],
+        memoryBlockId: String?,
+        configKeychainItems: [String]?,
+        configFields: [String]?,
+        slashCommandFiles: [String]?,
+        miniAppIds: [String]? = nil
+    ) {
+        self.templateId = templateId
+        self.templateVersion = templateVersion
+        self.templateName = templateName
+        self.installedAt = installedAt
+        self.projectFiles = projectFiles
+        self.skillsNamespaceDir = skillsNamespaceDir
+        self.skillsFiles = skillsFiles
+        self.cronJobNames = cronJobNames
+        self.memoryBlockId = memoryBlockId
+        self.configKeychainItems = configKeychainItems
+        self.configFields = configFields
+        self.slashCommandFiles = slashCommandFiles
+        self.miniAppIds = miniAppIds
+    }
 
     enum CodingKeys: String, CodingKey {
         case templateId = "template_id"
@@ -257,6 +331,7 @@ nonisolated struct TemplateLock: Codable, Sendable {
         case configKeychainItems = "config_keychain_items"
         case configFields = "config_fields"
         case slashCommandFiles = "slash_command_files"
+        case miniAppIds = "mini_app_ids"
     }
 }
 

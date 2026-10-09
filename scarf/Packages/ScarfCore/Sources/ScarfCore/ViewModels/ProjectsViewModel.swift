@@ -848,11 +848,10 @@ public final class ProjectsViewModel {
     }
 
     /// Per-project `.scarf/` directories — watched alongside `dashboardPaths`
-    /// so that file-reading widgets (markdown_file, log_tail, image) refresh
-    /// when their underlying files are added / removed / renamed inside the
-    /// directory by a cron job. In-place file appends within an existing
-    /// file are NOT detected here; the cron job should write atomically
-    /// (write-then-rename) or `touch` dashboard.json after each run.
+    /// so that file-reading widgets refresh when a file inside `.scarf/` is
+    /// added, removed, or renamed. In-place appends, and files outside
+    /// `.scarf/` such as `reports/uptime.log`, are watched separately: the
+    /// open dashboard installs those resolved paths on the file watcher.
     /// Archived rows excluded — see `dashboardPaths`.
     public var projectScarfDirs: [String] {
         projects.filter { !$0.archived }.map(\.scarfDir)

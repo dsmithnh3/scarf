@@ -92,7 +92,7 @@ public struct MiniAppGrantStore: GuardedSidecarStore, Sendable {
         guard let grant = load().first(where: { $0.projectId == projectId && $0.miniAppId == miniAppId }) else {
             return []
         }
-        return Set(grant.permissions.map { MiniAppPermission(rawValue: $0) })
+        return MiniAppPermission.wired(Set(grant.permissions.map { MiniAppPermission(rawValue: $0) }))
     }
 
     /// Record (upsert) the user's decision. An empty set is a meaningful
@@ -107,7 +107,7 @@ public struct MiniAppGrantStore: GuardedSidecarStore, Sendable {
         var grant = MiniAppGrant(
             projectId: projectId,
             miniAppId: miniAppId,
-            permissions: permissions.map(\.rawValue).sorted(),
+            permissions: MiniAppPermission.wired(permissions).map(\.rawValue).sorted(),
             decidedAt: Self.iso8601.string(from: Date()),
             manifestFingerprint: manifestFingerprint
         )

@@ -398,3 +398,29 @@ public struct ScarfTabStrip<Tab: ScarfTabStripTab>: View {
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }
+
+// MARK: - Chrome
+
+/// Liquid Glass for chrome on OS 26, and the current opaque surface fill
+/// otherwise. The system glass effect follows Reduce Transparency, Increase
+/// Contrast, and Reduce Motion. Cards, tables, and log tails stay opaque.
+public extension View {
+    func scarfChromeGlass() -> some View {
+        modifier(ScarfChromeGlassModifier())
+    }
+}
+
+private struct ScarfChromeGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, iOS 26, *) {
+            GlassEffectContainer {
+                content.glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
+                )
+            }
+        } else {
+            content.background(ScarfColor.backgroundSecondary)
+        }
+    }
+}

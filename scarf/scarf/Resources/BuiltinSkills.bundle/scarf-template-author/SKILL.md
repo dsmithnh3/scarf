@@ -127,7 +127,7 @@ Explain the widget catalog (see Widget Catalog sections below) in plain English,
 - The last N lines of a log/output file → `log_tail` (v2.7+).
 - The state of one Hermes cron job (last run / next run / output) → `cron_status` (v2.7+).
 
-**v2.7 file-reading widgets** (`markdown_file`, `log_tail`, `image`-with-`path`) read files relative to the project root. **By convention, write the underlying files inside `<project>/.scarf/`** (e.g. `.scarf/reports/weekly.md`, `.scarf/reports/run.log`) so the project-wide directory watch picks up changes and the widgets refresh automatically. Files outside `.scarf/` work too but only refresh when `dashboard.json` itself changes, so cron jobs writing outside `.scarf/` should `touch dashboard.json` after each run.
+**v2.7 file-reading widgets** (`markdown_file`, `log_tail`, `image`-with-`path`) read files relative to the project root. Scarf watches those resolved files directly, including paths outside `.scarf/` such as `reports/uptime.log`, so an in-place append refreshes the widget. The path must stay inside the project.
 
 ### 4. Configuration needs
 
@@ -148,6 +148,8 @@ For v1 just write `AGENTS.md` — every modern agent reads it, and if you need a
 All widgets require `type` and `title`. Type-specific fields below.
 
 `project_update_dashboard` validates every widget against this exact catalog before it writes anything, so a type or a missing required field that isn't in here comes back as a refusal rather than a broken dashboard. The accepted types are: `stat`, `progress`, `text`, `table`, `chart`, `list`, `webview`, `markdown_file`, `log_tail`, `cron_status`, `image`, `status_grid`, `kanban_summary`.
+
+`markdown_file`, `log_tail`, `image`, `cron_status`, and `kanban_summary` render on Mac only — a phone shows a placeholder, so don't make one of them the only view of something a phone user needs. `status_grid` renders on iPhone and iPad as well as Mac.
 
 ### `stat` — single metric
 ```json
@@ -211,7 +213,7 @@ Every row should have the same length as `columns`. Nothing validates this — t
 
 ## Widget Catalog (v2.7+ — file-reading and richer widgets)
 
-Five new widget types landed in v2.7. They all read from disk relative to the project root, and refresh automatically when any file under `<project>/.scarf/` changes — so a cron job that writes `<project>/.scarf/reports/uptime.md` will trigger the corresponding widget to re-render. **Convention: place the underlying files inside `.scarf/` (or a subdir of it) so the directory watch picks them up.** Files outside `.scarf/` work too but only refresh when `dashboard.json` itself changes.
+Five new widget types landed in v2.7. `markdown_file`, `log_tail`, and a local `image` read from disk relative to the project root. Scarf watches those resolved files, including paths outside `.scarf/`, so a cron job that appends `reports/uptime.log` refreshes the widget without touching `dashboard.json`. The path must stay inside the project.
 
 ### `markdown_file` — renders a markdown file from disk
 ```json
@@ -223,7 +225,7 @@ Five new widget types landed in v2.7. They all read from disk relative to the pr
 ```json
 { "type": "log_tail", "title": "Last cron run", "path": ".scarf/reports/run.log", "lines": 30 }
 ```
-Default `lines` is 20, capped at 200. ANSI color codes are stripped automatically. Pair with cron jobs that write atomic log snapshots (write-temp + rename) — in-place appends won't refresh until `dashboard.json` is touched.
+Default `lines` is 20, capped at 200. ANSI color codes are stripped automatically. An in-place append refreshes the widget; the file does not have to live under `.scarf/`.
 
 ### `cron_status` — last/next run + state for one Hermes cron job
 ```json
@@ -337,7 +339,7 @@ Same rule for long file paths, API endpoints, or any other unbreakable token —
 - **Enum fields MUST have non-empty `options`.**
 - **List fields MUST have `itemType: "string"`** in v1 (only itemType supported).
 - **Field keys MUST be unique** within a schema.
-- **`schemaVersion` is 1, 2 or 3** — pick the lowest that covers what the template ships. 1 = dashboard/AGENTS only; **2** = adds the `config` block; **3** = adds `contents.slashCommands`. A bundle that ships `slash-commands/` files MUST be schemaVersion 3 and MUST list every one of them in `contents.slashCommands`, or the validator rejects it both ways (claimed-but-missing, and present-but-unclaimed).
+- **`schemaVersion` is 1, 2, 3, or 4** — pick the lowest that covers what the template ships. 1 = dashboard/AGENTS only; **2** = adds the `config` block; **3** = adds `contents.slashCommands`; **4** = adds `contents.miniApps`. A bundle that ships `slash-commands/` files MUST be schemaVersion 3 or higher and MUST list every one of them in `contents.slashCommands`. A bundle that ships `miniapps/<id>/` MUST be schemaVersion 4 and MUST list every id in `contents.miniApps` (the same kebab-case letter-first names as slash commands). The `id` inside `miniapp.json` must equal the directory name. Older Scarf rejects schema 4. Do not put `state.json`, grants, consent, or keys in the bundle. Install copies the files and does not grant permissions, start a session, or run scripts. `generated: false` does not skip the permission sheet.
 - **`contents.config`** must equal the actual count of schema fields — a claim mismatch is rejected.
 - **`contents.cron`** must equal the number of cron jobs in the bundle. It defaults to 0, so a template that exports one cron job and forgets this line is rejected.
 
@@ -359,7 +361,11 @@ staging/
 ├── README.md
 ├── cron/
 │   └── jobs.json      # WRITTEN BY THE EXPORTER from the user's real cron jobs
-└── slash-commands/    # only when the template ships commands
+├── slash-commands/    # only when the template ships commands
+└── miniapps/          # schema 4, from .scarf/miniapps/<id>/ except state.json
+    └── <id>/
+        ├── miniapp.json
+        └── index.html
 ```
 
 Each entry the exporter writes into `cron/jobs.json` is shaped like this — useful to recognize, not to author by hand:

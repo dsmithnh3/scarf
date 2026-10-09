@@ -15,6 +15,8 @@ struct KanbanSummaryWidgetView: View {
 
     @Environment(\.serverContext) private var serverContext
     @Environment(\.selectedProjectRoot) private var projectRoot
+    @Environment(\.hermesCapabilities) private var capabilitiesStore
+    @Environment(\.dashboardProject) private var dashboardProject
 
     // The 9pt initials badge was a hardcoded point size in a fixed 16x16
     // frame — defeats Dynamic Type. Scale both together.
@@ -28,6 +30,9 @@ struct KanbanSummaryWidgetView: View {
     @State private var isLoading = false
     @State private var error: String?
     @State private var pollTask: Task<Void, Never>?
+    /// One mint attempt per project. A failed write keeps the empty copy
+    /// and does not retry on the 10s poll.
+    @State private var mintAttemptedForProjectID: String?
 
     private var maxRows: Int {
         if case .number(let n) = widget.value { return max(1, Int(n)) }
@@ -160,6 +165,13 @@ struct KanbanSummaryWidgetView: View {
     private func loadOnce() async {
         guard let projectRoot, !projectRoot.isEmpty else { return }
         await refreshTenant(projectRoot: projectRoot)
+        if tenant == nil || tenant?.isEmpty == true {
+            if await mintTenantIfNeeded() {
+                // The manifest changed under the signature we just cached.
+                tenantProbe = nil
+                await refreshTenant(projectRoot: projectRoot)
+            }
+        }
         guard let tenant, !tenant.isEmpty else {
             tasks = []
             return
@@ -199,6 +211,23 @@ struct KanbanSummaryWidgetView: View {
         case .todo:     return 3
         default:        return 4
         }
+    }
+
+    /// Mint a tenant when this widget is on screen and the host has
+    /// Kanban, so the card is not stuck on the empty copy until someone
+    /// opens the Board. Runs off the main actor. Does not refresh
+    /// `AGENTS.md` — `resolveOrMint` only writes `kanbanTenant` on the
+    /// manifest. A failed write leaves the empty copy in place.
+    private func mintTenantIfNeeded() async -> Bool {
+        guard capabilitiesStore?.capabilities.hasKanban == true else { return false }
+        guard let project = dashboardProject else { return false }
+        guard mintAttemptedForProjectID != project.id else { return false }
+        mintAttemptedForProjectID = project.id
+        let resolver = KanbanTenantResolver(context: serverContext)
+        let minted = await Task.detached(priority: .utility) { () -> String? in
+            try? resolver.resolveOrMint(for: project)
+        }.value
+        return minted != nil
     }
 
     /// Resolve the project's kanban tenant, OFF THE MAIN ACTOR and at

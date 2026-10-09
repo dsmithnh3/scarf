@@ -88,6 +88,9 @@ nonisolated struct CatalogEntry: Codable, Sendable, Identifiable, Hashable {
         let config: Int?
         let memory: Bool?
         let skills: [String]?
+        /// Mini-app ids a schema-4 catalog entry ships. Absent on older
+        /// catalog rows.
+        let miniApps: [String]?
     }
 }
 

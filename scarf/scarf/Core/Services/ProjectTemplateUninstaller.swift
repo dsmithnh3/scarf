@@ -713,6 +713,19 @@ struct ProjectTemplateUninstaller: Sendable {
                 Self.logger.warning("couldn't remove \(file, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         }
+        // Mini-app id directories, only when the locked files are gone and
+        // nothing the user added (including a later state.json) remains.
+        if let ids = plan.lock.miniAppIds {
+            let miniapps = root + "/.scarf/miniapps"
+            for id in ids {
+                let dir = miniapps + "/" + id
+                guard guardian.admits(dir, under: root) else { continue }
+                _ = removeProjectDirIfEmpty(dir, transport: transport)
+            }
+            if guardian.admits(miniapps, under: root) {
+                _ = removeProjectDirIfEmpty(miniapps, transport: transport)
+            }
+        }
         // The `.scarf/` directory itself, when nothing is left in it. Same
         // confirm-then-remove discipline as the project dir below: local
         // `removeFile` is recursive, so "I think it's empty" is not enough.

@@ -156,12 +156,12 @@ Create `.scarf/dashboard.json` in your project root:
 {
   "type": "webview",
   "title": "Project Dashboard",
-  "url": "http://localhost:8000",
+  "url": "https://example.com",
   "height": 500
 }
 ```
 
-- `url`: Any URL — local servers, file paths, or remote pages
+- `url`: An `https://` URL with a host. `http://`, `file://`, and other schemes are refused by the catalog and render as an error card.
 - `height`: Height in points (optional, default: 400)
 
 When a dashboard includes a webview widget, Scarf adds a tabbed interface: **Dashboard** shows all normal widgets, **Site** displays the web content full-canvas. The webview widget is automatically filtered out of the Dashboard tab's grid layout.
@@ -193,7 +193,7 @@ When a dashboard includes a webview widget, Scarf adds a tabbed interface: **Das
 - `path`: File path relative to the project root, no `..` segments
 - `lines`: Number of trailing lines to show (optional, default 20, clamped to 1–200)
 - ANSI escape codes are stripped before display
-- In-place appends to an existing file don't trigger a refresh on their own — have the writing cron job also touch `dashboard.json` after each run
+- The file is watched directly, including paths outside `.scarf/` such as `reports/uptime.log`. An in-place append refreshes the widget. The path must stay inside the project.
 
 ### cron_status — Hermes cron job status + output tail
 

@@ -89,7 +89,7 @@ nonisolated struct CatalogService: Sendable {
                 bundleSize: nil,
                 bundleSha256: nil,
                 detailSlug: "awizemann-site-status-checker",
-                contents: .init(dashboard: true, agentsMd: true, cron: 1, config: 2, memory: nil, skills: nil),
+                contents: .init(dashboard: true, agentsMd: true, cron: 1, config: 2, memory: nil, skills: nil, miniApps: nil),
                 config: nil
             ),
             CatalogEntry(
@@ -106,7 +106,7 @@ nonisolated struct CatalogService: Sendable {
                 bundleSize: nil,
                 bundleSha256: nil,
                 detailSlug: "awizemann-hackernews-digest",
-                contents: .init(dashboard: true, agentsMd: true, cron: 1, config: 3, memory: nil, skills: nil),
+                contents: .init(dashboard: true, agentsMd: true, cron: 1, config: 3, memory: nil, skills: nil, miniApps: nil),
                 config: nil
             )
         ]
