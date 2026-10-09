@@ -80,7 +80,7 @@ struct SkillDetailView: View {
                         }
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                     }
                     .padding(.vertical, 4)
                 }
@@ -138,7 +138,7 @@ struct SkillDetailView: View {
                 Section {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Skill settings not set")
                                 .font(.callout)
@@ -211,7 +211,7 @@ struct SkillDetailView: View {
                     } else if let contentError = vm.contentError {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(ScarfColor.warning)
                                 .accessibilityHidden(true)
                             Text(contentError)
                                 .font(.caption)

@@ -256,7 +256,8 @@ struct AnalyticsFeatureUsageEventsTests {
                 projectRegistryName: "Example",
                 configSchema: nil,
                 configValues: [:],
-                manifestCachePath: nil
+                manifestCachePath: nil,
+                miniApps: []
             )
         }
         let ns = "/home/u/.hermes/skills/templates/example"

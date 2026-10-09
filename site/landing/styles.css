@@ -1,5 +1,5 @@
 /* Scarf landing page.
- * Vanilla CSS, no framework. Tokens map to ScarfDesign (rust palette).
+ * Vanilla CSS, no framework. Tokens map to ScarfDesign (Electric Cobalt palette).
  *
  * Layers:
  *   1. Tokens (CSS custom properties)
@@ -15,21 +15,21 @@
 
 :root {
   /* Colors — light mode (mirrors ScarfBrand.xcassets light variants) */
-  --accent: #C2563D;
-  --accent-hover: #A8482F;
-  --accent-active: #8E3B26;
-  --accent-tint: rgba(194, 86, 61, 0.12);
+  --accent: #0066E8;
+  --accent-hover: #2448C7;
+  --accent-active: #1B3599;
+  --accent-tint: rgba(47, 91, 234, 0.12);
 
-  --fg: #1A1818;
-  --fg-muted: #5C5552;
-  --fg-faint: #8B8480;
+  --fg: #12141A;
+  --fg-muted: #5C6370;
+  --fg-faint: #8B919C;
 
-  --bg: #FAF7F2;
+  --bg: #F7F8FA;
   --bg-card: #FFFFFF;
-  --bg-tertiary: #F2EDE5;
+  --bg-tertiary: #EEF0F4;
 
-  --border: #E5DED2;
-  --border-strong: #C9BFAE;
+  --border: rgba(26, 29, 38, 0.12);
+  --border-strong: rgba(26, 29, 38, 0.20);
 
   --success: #4F8B5F;
   --danger: #B5453A;
@@ -74,21 +74,21 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #E89580;
-    --accent-hover: #ECA593;
-    --accent-active: #F0B5A6;
-    --accent-tint: rgba(232, 149, 128, 0.16);
+    --accent: #5B9FFF;
+    --accent-hover: #9BB4FF;
+    --accent-active: #5A7FF0;
+    --accent-tint: rgba(123, 156, 255, 0.16);
 
-    --fg: #EDEBEB;
-    --fg-muted: #ADA8A4;
-    --fg-faint: #807A75;
+    --fg: #E8ECF2;
+    --fg-muted: #9AA3B2;
+    --fg-faint: #6B7382;
 
-    --bg: #141211;
-    --bg-card: #1F1C1A;
-    --bg-tertiary: #2A2622;
+    --bg: #0E1016;
+    --bg-card: #181B24;
+    --bg-tertiary: #1E2230;
 
-    --border: #2F2A26;
-    --border-strong: #4A413A;
+    --border: rgba(232, 236, 245, 0.10);
+    --border-strong: rgba(232, 236, 245, 0.16);
 
     --success: #6FA37E;
     --danger: #D27468;
@@ -105,18 +105,18 @@
 /* Manual theme override (set by app.js — wins over media query) */
 :root[data-theme="light"] {
   color-scheme: light;
-  --accent: #C2563D;
-  --accent-hover: #A8482F;
-  --accent-active: #8E3B26;
-  --accent-tint: rgba(194, 86, 61, 0.12);
-  --fg: #1A1818;
-  --fg-muted: #5C5552;
-  --fg-faint: #8B8480;
-  --bg: #FAF7F2;
+  --accent: #0066E8;
+  --accent-hover: #2448C7;
+  --accent-active: #1B3599;
+  --accent-tint: rgba(47, 91, 234, 0.12);
+  --fg: #12141A;
+  --fg-muted: #5C6370;
+  --fg-faint: #8B919C;
+  --bg: #F7F8FA;
   --bg-card: #FFFFFF;
-  --bg-tertiary: #F2EDE5;
-  --border: #E5DED2;
-  --border-strong: #C9BFAE;
+  --bg-tertiary: #EEF0F4;
+  --border: rgba(26, 29, 38, 0.12);
+  --border-strong: rgba(26, 29, 38, 0.20);
   --success: #4F8B5F;
   --danger: #B5453A;
   --warning: #C9821C;
@@ -129,18 +129,18 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --accent: #E89580;
-  --accent-hover: #ECA593;
-  --accent-active: #F0B5A6;
-  --accent-tint: rgba(232, 149, 128, 0.16);
-  --fg: #EDEBEB;
-  --fg-muted: #ADA8A4;
-  --fg-faint: #807A75;
-  --bg: #141211;
-  --bg-card: #1F1C1A;
-  --bg-tertiary: #2A2622;
-  --border: #2F2A26;
-  --border-strong: #4A413A;
+  --accent: #5B9FFF;
+  --accent-hover: #9BB4FF;
+  --accent-active: #5A7FF0;
+  --accent-tint: rgba(123, 156, 255, 0.16);
+  --fg: #E8ECF2;
+  --fg-muted: #9AA3B2;
+  --fg-faint: #6B7382;
+  --bg: #0E1016;
+  --bg-card: #181B24;
+  --bg-tertiary: #1E2230;
+  --border: rgba(232, 236, 245, 0.10);
+  --border-strong: rgba(232, 236, 245, 0.16);
   --success: #6FA37E;
   --danger: #D27468;
   --warning: #DDA653;

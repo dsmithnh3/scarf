@@ -70,6 +70,117 @@ import ScarfCore
         #expect(inspection.files.contains("AGENTS.md"))
     }
 
+    @Test func schema4MiniAppRoundTripsAndStateJSONIsRejected() async throws {
+        let dir = try Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let manifest = ProjectTemplateManifest(
+            schemaVersion: 4,
+            id: "test/example",
+            name: "Example",
+            version: "1.0.0",
+            minScarfVersion: nil,
+            minHermesVersion: nil,
+            author: nil,
+            description: "Test template",
+            category: nil,
+            tags: nil,
+            icon: nil,
+            screenshots: nil,
+            contents: TemplateContents(
+                dashboard: true,
+                agentsMd: true,
+                instructions: nil,
+                skills: nil,
+                cron: nil,
+                memory: nil,
+                config: nil,
+                slashCommands: nil,
+                miniApps: ["board"]
+            ),
+            config: nil
+        )
+        let manifestString = String(data: try JSONEncoder().encode(manifest), encoding: .utf8)!
+        let mini = #"{"id":"board","name":"Board","permissions":["query:kanban.tasks"]}"#
+        let bundle = try Self.makeBundle(dir: dir, files: [
+            "README.md": "# Readme",
+            "AGENTS.md": "# Agents",
+            "dashboard.json": Self.sampleDashboardJSON,
+            "template.json": manifestString,
+            "miniapps/board/miniapp.json": mini,
+            "miniapps/board/index.html": "<p>hi</p>"
+        ], includeManifest: false)
+        let service = ProjectTemplateService(context: .local)
+        let inspection = try await service.inspect(zipPath: bundle)
+        defer { service.cleanupTempDir(inspection.unpackedDir) }
+        #expect(inspection.manifest.schemaVersion == 4)
+        #expect(inspection.manifest.contents.miniApps == ["board"])
+        let parent = dir + "/install-parent"
+        try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
+        let plan = try service.buildPlan(inspection: inspection, parentDir: parent)
+        #expect(plan.miniApps.map(\.id) == ["board"])
+        #expect(plan.miniApps.first?.permissions == ["query:kanban.tasks"])
+        #expect(plan.projectFiles.contains { $0.destinationPath.hasSuffix("/.scarf/miniapps/board/index.html") })
+
+        let dirty = try Self.makeBundle(dir: dir, files: [
+            "README.md": "# Readme",
+            "AGENTS.md": "# Agents",
+            "dashboard.json": Self.sampleDashboardJSON,
+            "template.json": manifestString,
+            "miniapps/board/miniapp.json": mini,
+            "miniapps/board/state.json": "{}"
+        ], includeManifest: false)
+        await #expect(throws: ProjectTemplateError.self) {
+            try await service.inspect(zipPath: dirty)
+        }
+    }
+
+    @Test func unclaimedMiniAppAndSchema5AreRejected() async throws {
+        let dir = try Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let bare = Self.sampleManifest()
+        let bareJSON = String(data: try JSONEncoder().encode(bare), encoding: .utf8)!
+        let unclaimed = try Self.makeBundle(dir: dir, files: [
+            "README.md": "# Readme",
+            "AGENTS.md": "# Agents",
+            "dashboard.json": Self.sampleDashboardJSON,
+            "template.json": bareJSON,
+            "miniapps/board/miniapp.json": #"{"id":"board","name":"Board"}"#
+        ], includeManifest: false)
+        let service = ProjectTemplateService(context: .local)
+        await #expect(throws: ProjectTemplateError.self) {
+            try await service.inspect(zipPath: unclaimed)
+        }
+
+        let futureManifest = ProjectTemplateManifest(
+            schemaVersion: 5,
+            id: bare.id,
+            name: bare.name,
+            version: bare.version,
+            minScarfVersion: nil,
+            minHermesVersion: nil,
+            author: bare.author,
+            description: bare.description,
+            category: nil,
+            tags: nil,
+            icon: nil,
+            screenshots: nil,
+            contents: bare.contents,
+            config: nil
+        )
+        let futureJSON = String(data: try JSONEncoder().encode(futureManifest), encoding: .utf8)!
+        let bundle = try Self.makeBundle(dir: dir, files: [
+            "README.md": "# Readme",
+            "AGENTS.md": "# Agents",
+            "dashboard.json": Self.sampleDashboardJSON,
+            "template.json": futureJSON
+        ], includeManifest: false)
+        await #expect(throws: ProjectTemplateError.self) {
+            try await service.inspect(zipPath: bundle)
+        }
+        #expect(ProjectTemplateService.supportedSchemaVersions.contains(4))
+        #expect(!ProjectTemplateService.supportedSchemaVersions.contains(5))
+    }
+
     @Test func inspectRejectsContentClaimMismatch() async throws {
         let dir = try Self.makeTempDir()
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -1164,7 +1275,8 @@ struct ProjectTemplateConfigInstallTests {
             projectRegistryName: "VM Transitions",
             configSchema: schema,
             configValues: [:],
-            manifestCachePath: tmp + "/project/.scarf/manifest.json"
+            manifestCachePath: tmp + "/project/.scarf/manifest.json",
+            miniApps: []
         )
     }
 }

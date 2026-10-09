@@ -33,6 +33,20 @@ import Foundation
         }
     }
 
+    @Test func unwiredPermissionsAreNotStoredOrReturned() throws {
+        try Self.withTempHome { ctx in
+            let store = MiniAppGrantStore(context: ctx)
+            try store.setGrant(
+                projectId: "p",
+                miniAppId: "a",
+                permissions: [.store, .fileWrite, .kanbanWrite, .net]
+            )
+            #expect(store.grantedPermissions(projectId: "p", miniAppId: "a") == [.store])
+            let raw = store.allGrants().first { $0.miniAppId == "a" }?.permissions ?? []
+            #expect(raw == ["store"])
+        }
+    }
+
     @Test func upsertReplacesPriorDecision() throws {
         try Self.withTempHome { ctx in
             let store = MiniAppGrantStore(context: ctx)

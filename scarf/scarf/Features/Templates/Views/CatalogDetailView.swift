@@ -93,6 +93,9 @@ struct CatalogDetailView: View {
                     if let skills = contents.skills, !skills.isEmpty {
                         contentRow(icon: "wand.and.rays", text: "\(skills.count) skill\(skills.count == 1 ? "" : "s"): \(skills.joined(separator: ", "))")
                     }
+                    if let miniApps = contents.miniApps, !miniApps.isEmpty {
+                        contentRow(icon: "macwindow", text: "\(miniApps.count) mini-app\(miniApps.count == 1 ? "" : "s"): \(miniApps.joined(separator: ", "))")
+                    }
                 }
             }
         }

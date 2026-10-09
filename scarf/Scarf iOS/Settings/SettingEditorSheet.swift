@@ -45,7 +45,7 @@ struct SettingEditorSheet: View {
                 if let err = saveError {
                     Section {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(ScarfColor.warning)
                             .font(.caption)
                             .textSelection(.enabled)
                     }

@@ -169,14 +169,14 @@ struct RestoreServerSheet: View {
                 Text("Hermes is running on this server (process \(pids.map(String.init).joined(separator: ", ")) has a Hermes database open). Stop the Hermes gateway and close any Hermes chats there before restoring; the restore will refuse otherwise.")
                     .font(.caption)
             } icon: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ScarfColor.warning)
             }
         case .unknown?:
             Label {
                 Text("Scarf couldn't check whether Hermes is running on this server. Stop the Hermes gateway and any Hermes chats there before restoring.")
                     .font(.caption)
             } icon: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ScarfColor.warning)
             }
         default:
             EmptyView()

@@ -219,10 +219,10 @@ struct CredentialPoolsView: View {
                     if stale, let days = nousSubscription.daysSinceLastRefresh() {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(ScarfColor.warning)
                             Text("Your Nous subscription was last refreshed \(days) days ago. Enable the toggle above to prevent the refresh token from expiring.")
                                 .font(.caption)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(ScarfColor.warning)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.top, 4)
@@ -351,7 +351,7 @@ struct CredentialPoolsView: View {
                             if !provider.hasAccessToken && provider.hasRefreshToken {
                                 Text("refresh-only")
                                     .font(.caption2)
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(ScarfColor.warning)
                             }
                             oauthExpiryBadge(provider)
                             if provider.inheritedFromRoot {
@@ -438,7 +438,7 @@ struct CredentialPoolsView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(.orange)
+                    .background(ScarfColor.warning)
                     .clipShape(Capsule())
             }
         }
@@ -599,7 +599,7 @@ struct CredentialPoolsView: View {
     private func statusColor(_ status: String) -> Color {
         switch status {
         case "ok", "active": return .green
-        case "cooldown": return .orange
+        case "cooldown": return ScarfColor.warning
         case "exhausted": return .red
         default: return .secondary
         }
@@ -627,7 +627,7 @@ struct CredentialPoolsView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(.orange)
+                    .background(ScarfColor.warning)
                     .clipShape(Capsule())
             }
         }
@@ -1000,7 +1000,7 @@ private struct AddCredentialSheet: View {
             } else if let err = flow.errorMessage {
                 Label(err, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                     .lineLimit(1)
             }
         }
@@ -1193,7 +1193,7 @@ private struct AddCredentialSheet: View {
             if let providerSwapError {
                 Label(providerSwapError, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(ScarfColor.warning)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }

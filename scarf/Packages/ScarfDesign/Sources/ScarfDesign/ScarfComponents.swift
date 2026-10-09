@@ -12,7 +12,10 @@ import SwiftUI
 // MARK: - Buttons
 
 public struct ScarfPrimaryButton: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+
     public init() {}
+
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scarfStyle(.bodyEmph)
@@ -21,10 +24,19 @@ public struct ScarfPrimaryButton: ButtonStyle {
             .padding(.vertical, ScarfSpace.s2)
             .background(
                 RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
-                    .fill(configuration.isPressed ? ScarfColor.accentActive : ScarfColor.accent)
+                    .fill(primaryFill(isPressed: configuration.isPressed))
             )
             .scarfShadow(.sm)
             .opacity(configuration.isPressed ? 0.95 : 1)
+    }
+
+    private func primaryFill(isPressed: Bool) -> Color {
+        if colorScheme == .dark {
+            return isPressed
+                ? ScarfColor.accentActive.opacity(0.88)
+                : ScarfColor.accentActive
+        }
+        return isPressed ? ScarfColor.accentActive : ScarfColor.accent
     }
 }
 
@@ -396,5 +408,31 @@ public struct ScarfTabStrip<Tab: ScarfTabStripTab>: View {
         // the state as a trait since the control is selectable (tabs),
         // per the macOS accessibility label conventions note.
         .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+}
+
+// MARK: - Chrome
+
+/// Liquid Glass for chrome on OS 26, and the current opaque surface fill
+/// otherwise. The system glass effect follows Reduce Transparency, Increase
+/// Contrast, and Reduce Motion. Cards, tables, and log tails stay opaque.
+public extension View {
+    func scarfChromeGlass() -> some View {
+        modifier(ScarfChromeGlassModifier())
+    }
+}
+
+private struct ScarfChromeGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, iOS 26, *) {
+            GlassEffectContainer {
+                content.glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
+                )
+            }
+        } else {
+            content.background(ScarfColor.backgroundSecondary)
+        }
     }
 }

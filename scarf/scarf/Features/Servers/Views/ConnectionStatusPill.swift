@@ -257,7 +257,7 @@ private struct HostKeyMismatchHint: View {
         VStack(alignment: .leading, spacing: 6) {
             Label("Host key changed", systemImage: "exclamationmark.shield")
                 .font(.subheadline).bold()
-                .foregroundStyle(.orange)
+                .foregroundStyle(ScarfColor.warning)
             Text("The remote's SSH fingerprint no longer matches what your `~/.ssh/known_hosts` file expected. This usually means the remote was reinstalled — or, less commonly, that someone is intercepting the connection.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -281,7 +281,7 @@ private struct HostKeyMismatchHint: View {
             }
         }
         .padding(8)
-        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+        .background(ScarfColor.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 

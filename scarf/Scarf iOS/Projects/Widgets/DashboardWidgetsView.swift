@@ -96,9 +96,36 @@ struct WidgetView: View {
             ListWidgetView(widget: widget)
         case "webview":
             WebviewWidgetView(widget: widget)
+        case "status_grid":
+            StatusGridWidgetView(widget: widget)
+        case "markdown_file", "log_tail", "image", "cron_status", "kanban_summary":
+            macOnlyView
         default:
             unsupportedView
         }
+    }
+
+    /// These types are known. They stay on Mac because they need a file
+    /// watch, remote-image consent, cron output, or a Kanban tenant.
+    private var macOnlyView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "macwindow")
+                    .font(.caption)
+                    .foregroundStyle(ScarfColor.foregroundMuted)
+                Text(widget.title.isEmpty ? widget.type : widget.title)
+                    .font(.caption)
+                    .foregroundStyle(ScarfColor.foregroundMuted)
+            }
+            Text("This widget is available in Scarf on Mac.")
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(ScarfColor.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var unsupportedView: some View {

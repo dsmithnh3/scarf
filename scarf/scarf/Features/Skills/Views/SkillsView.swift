@@ -350,10 +350,10 @@ struct SkillsView: View {
                                     .font(.caption.monospaced())
                             }
                         }
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(ScarfColor.warning)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.orange.opacity(0.1))
+                        .background(ScarfColor.warning.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     // v2.5 Spotify auth affordance — only when this skill
@@ -577,10 +577,10 @@ struct SkillsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .foregroundStyle(.orange)
+        .foregroundStyle(ScarfColor.warning)
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.1))
+        .background(ScarfColor.warning.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -865,7 +865,7 @@ struct SkillsView: View {
                         ForEach(viewModel.updates) { update in
                             HStack {
                                 Image(systemName: "arrow.triangle.2.circlepath")
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(ScarfColor.warning)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(update.identifier)
                                         .font(.system(.body, design: .monospaced, weight: .medium))
@@ -904,7 +904,7 @@ struct SkillsView: View {
                 systemImage: "exclamationmark.triangle"
             )
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.orange)
+            .foregroundStyle(ScarfColor.warning)
             ForEach(viewModel.updateFaults) { fault in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(fault.identifier)
@@ -935,7 +935,7 @@ struct SkillsView: View {
                 systemImage: "pencil.and.outline"
             )
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.orange)
+            .foregroundStyle(ScarfColor.warning)
             ForEach(viewModel.skippedLocalEdits, id: \.self) { name in
                 HStack {
                     Text(name)

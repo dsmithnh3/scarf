@@ -216,6 +216,22 @@ final class AppCoordinator {
     var selectedSessionId: String?
     var selectedProjectName: String?
 
+    /// The window that last became active. An App Intent cannot see
+    /// `FocusedValues`, so the shortcut addresses this coordinator.
+    @MainActor static weak var frontmost: AppCoordinator?
+    /// Set when the shortcut runs before any window has published itself.
+    @MainActor static var pendingOpenBoard = false
+    /// The cockpit consumes this and switches to Board only when the host
+    /// `hasKanban` and a project is selected.
+    var openBoardRequested = false
+
+    /// Shortcut entry. No selected project means there is no board to open.
+    func requestOpenBoard() {
+        guard selectedProjectName != nil else { return }
+        selectedSection = .projects
+        openBoardRequested = true
+    }
+
     /// When non-nil, ChatView should start a fresh ACP session with
     /// this absolute project path as cwd and then clear the value.
     /// Wired from the per-project Sessions tab's "New Chat" button

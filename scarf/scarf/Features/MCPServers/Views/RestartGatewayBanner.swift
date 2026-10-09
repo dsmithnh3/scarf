@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 
 struct RestartGatewayBanner: View {
     let onRestart: () -> Void
@@ -7,7 +8,7 @@ struct RestartGatewayBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(ScarfColor.warning)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Gateway restart required")
@@ -34,6 +35,6 @@ struct RestartGatewayBanner: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.14))
+        .background(ScarfColor.warning.opacity(0.14))
     }
 }

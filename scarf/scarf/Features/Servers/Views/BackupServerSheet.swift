@@ -110,7 +110,7 @@ struct BackupServerSheet: View {
                     ForEach(summary.projects, id: \.path) { p in
                         HStack(spacing: 6) {
                             Image(systemName: p.reachable ? "folder.fill" : "exclamationmark.triangle.fill")
-                                .foregroundStyle(p.reachable ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                                .foregroundStyle(p.reachable ? AnyShapeStyle(.secondary) : AnyShapeStyle(ScarfColor.warning))
                                 .font(.caption)
                             Text(verbatim: p.name).font(.callout)
                             Spacer()
@@ -181,7 +181,7 @@ struct BackupServerSheet: View {
                     Text("These databases couldn't be copied safely and are not in this backup: \(skipped.joined(separator: ", "))")
                         .font(.caption)
                 } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ScarfColor.warning)
                 }
             }
             HStack {

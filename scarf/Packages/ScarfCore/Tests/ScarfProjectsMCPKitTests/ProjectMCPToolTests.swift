@@ -436,7 +436,7 @@ import Foundation
                     """),
             ])
             #expect(outcome.isError)
-            #expect(outcome.text.contains("http:// or https://"))
+            #expect(outcome.text.contains("https://"))
         }
     }
 

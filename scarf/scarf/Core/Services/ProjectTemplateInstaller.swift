@@ -533,6 +533,7 @@ struct ProjectTemplateInstaller: Sendable {
             guard !names.isEmpty else { return nil }
             return names.sorted().map { ".scarf/slash-commands/\($0).md" }
         }()
+        let miniAppIds: [String]? = plan.miniApps.isEmpty ? nil : plan.miniApps.map(\.id)
 
         let lock = TemplateLock(
             templateId: plan.manifest.id,
@@ -546,7 +547,8 @@ struct ProjectTemplateInstaller: Sendable {
             memoryBlockId: plan.memoryAppendix == nil ? nil : plan.manifest.id,
             configKeychainItems: keychainItems,
             configFields: configFields,
-            slashCommandFiles: slashCommandFiles
+            slashCommandFiles: slashCommandFiles,
+            miniAppIds: miniAppIds
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

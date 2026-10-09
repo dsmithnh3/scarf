@@ -25,22 +25,24 @@ public enum ScarfColor {
         Color(name, bundle: .module)
     }
 
-    // Brand
-    public static let brandRust         = asset("Brand/BrandRust")
-    public static let brandRustHover    = asset("Brand/BrandRustHover")
-    public static let brandRustActive   = asset("Brand/BrandRustActive")
-    public static let brandAmber        = asset("Brand/BrandAmber")
-    public static let brandRustDeep     = asset("Brand/BrandRustDeep")
+    // Brand (Electric Cobalt)
+    public static let brandPrimary      = asset("Brand/BrandPrimary")
+    public static let brandHover        = asset("Brand/BrandHover")
+    public static let brandActive       = asset("Brand/BrandActive")
+    public static let brandDeep         = asset("Brand/BrandDeep")
+    public static let brandBright       = asset("Brand/BrandBright")
+    public static let brandSoftStart    = asset("Brand/BrandSoftStart")
+    public static let brandSoftEnd      = asset("Brand/BrandSoftEnd")
 
     /// Semantic alias: the "primary" accent. Use this in component code,
-    /// not `brandRust` directly — it lets you re-skin without a refactor.
-    public static var accent: Color        { brandRust }
-    public static var accentHover: Color   { brandRustHover }
-    public static var accentActive: Color  { brandRustActive }
+    /// not `brandPrimary` directly — it lets you re-skin without a refactor.
+    public static var accent: Color        { brandPrimary }
+    public static var accentHover: Color   { brandHover }
+    public static var accentActive: Color  { brandActive }
 
     /// Tinted accent for hover halos, selection backgrounds.
-    public static var accentTint: Color { brandRust.opacity(0.10) }
-    public static var accentTintStrong: Color { brandRust.opacity(0.18) }
+    public static var accentTint: Color { brandPrimary.opacity(0.10) }
+    public static var accentTintStrong: Color { brandPrimary.opacity(0.18) }
 
     // Surfaces
     public static let backgroundPrimary   = asset("Surface/BackgroundPrimary")
@@ -76,22 +78,22 @@ public enum ScarfColor {
 // MARK: - Gradients
 
 public enum ScarfGradient {
-    /// Tri-stop amber → rust → deep rust. Used on app icon, hero buttons, brand splashes.
+    /// Tri-stop cobalt gradient. Used on app icon, hero buttons, brand splashes.
     public static let brand = LinearGradient(
         colors: [
-            Color(red: 0.910, green: 0.576, blue: 0.376), // #E89360
-            Color(red: 0.761, green: 0.353, blue: 0.165), // #C25A2A
-            Color(red: 0.478, green: 0.180, blue: 0.078)  // #7A2E14
+            ScarfColor.brandBright,
+            ScarfColor.brandPrimary,
+            ScarfColor.brandDeep
         ],
         startPoint: .topLeading,
         endPoint:   .bottomTrailing
     )
 
-    /// Soft amber wash for empty states, onboarding moments.
+    /// Soft cobalt wash for empty states, onboarding moments.
     public static let brandSoft = LinearGradient(
         colors: [
-            Color(red: 0.965, green: 0.878, blue: 0.796), // #F6E0CB
-            Color(red: 0.937, green: 0.773, blue: 0.620)  // #EFC59E
+            ScarfColor.brandSoftStart,
+            ScarfColor.brandSoftEnd
         ],
         startPoint: .topLeading,
         endPoint:   .bottomTrailing

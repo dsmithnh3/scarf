@@ -1,4 +1,5 @@
 import SwiftUI
+import ScarfDesign
 
 /// Trailing slide-in surface for mini-apps.
 ///
@@ -11,10 +12,13 @@ import SwiftUI
 /// cockpit stay interactive (an inspector is non-modal). Drag the left edge to
 /// resize; the hosted content (`MiniAppLaunchHost`) owns its Close.
 struct MiniAppInspectorSurface<Content: View>: View {
+    /// `panelHint.preferredWidth`, when the manifest declared one. Used
+    /// only until the user drags; `placement` is ignored.
+    var preferredWidth: CGFloat? = nil
     @ViewBuilder var content: Content
 
-    /// Current panel width; `nil` until first layout → defaults to ~74% of
-    /// the available width.
+    /// Current panel width; `nil` until the user drags. The seed is
+    /// `preferredWidth`, then ~74% of the pane.
     @State private var width: CGFloat?
     /// Width captured at the start of a resize drag, so the delta is applied
     /// once rather than cumulatively.
@@ -29,7 +33,8 @@ struct MiniAppInspectorSurface<Content: View>: View {
         GeometryReader { geo in
             let total = geo.size.width
             let maxWidth = max(minWidth + 1, total - leftReserve)
-            let w = min(max(width ?? total * defaultFraction, minWidth), maxWidth)
+            let seed = width ?? preferredWidth ?? total * defaultFraction
+            let w = min(max(seed, minWidth), maxWidth)
             HStack(spacing: 0) {
                 // Left strip: invisible AND click-through, so the cockpit
                 // behind it stays usable while the mini-app is open.
@@ -63,6 +68,7 @@ struct MiniAppInspectorSurface<Content: View>: View {
         Rectangle()
             .fill(Color.clear)
             .frame(width: 10)
+            .scarfChromeGlass()
             .contentShape(Rectangle())
             .onHover { inside in
                 if inside { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }

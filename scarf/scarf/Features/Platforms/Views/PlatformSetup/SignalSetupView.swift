@@ -70,12 +70,12 @@ struct SignalSetupView: View {
                     .foregroundStyle(.secondary)
             } else {
                 Image(systemName: viewModel.signalCLIInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(viewModel.signalCLIInstalled ? .green : .orange)
+                    .foregroundStyle(viewModel.signalCLIInstalled ? .green : ScarfColor.warning)
                 (viewModel.signalCLIInstalled
                     ? Text("signal-cli is available on PATH")
                     : Text("signal-cli not found on PATH — install it first"))
                     .font(.caption)
-                    .foregroundStyle(viewModel.signalCLIInstalled ? Color.primary : Color.orange)
+                    .foregroundStyle(viewModel.signalCLIInstalled ? Color.primary : ScarfColor.warning)
             }
             Spacer()
         }

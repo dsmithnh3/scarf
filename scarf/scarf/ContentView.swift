@@ -1,5 +1,6 @@
 import SwiftUI
 import ScarfCore
+import ScarfDesign
 
 struct ContentView: View {
     @Environment(AppCoordinator.self) private var coordinator
@@ -63,6 +64,7 @@ struct ContentView: View {
                 .toolbar {
                     ToolbarItem(placement: .navigation) {
                         ServerSwitcherToolbar()
+                            .scarfChromeGlass()
                     }
                     if serverContext.isRemote {
                         // `.principal` centers the pill in the toolbar —
@@ -93,7 +95,9 @@ struct ContentView: View {
         // chrome; the left stays interactive. See MiniAppInspectorSurface.
         .overlay {
             if let presented = coordinator.presentedMiniApp {
-                MiniAppInspectorSurface {
+                MiniAppInspectorSurface(
+                    preferredWidth: presented.manifest.panelHint?.preferredWidth.map { CGFloat($0) }
+                ) {
                     MiniAppLaunchHost(
                         project: presented.project,
                         manifest: presented.manifest,

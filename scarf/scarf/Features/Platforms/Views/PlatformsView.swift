@@ -274,7 +274,7 @@ struct PlatformsView: View {
     private func statusColor(_ status: PlatformConnectivity) -> Color {
         switch status {
         case .connected: return .green
-        case .configured: return .orange
+        case .configured: return ScarfColor.warning
         case .notConfigured: return .secondary.opacity(0.4)
         case .error: return .red
         }

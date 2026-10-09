@@ -81,6 +81,15 @@ struct ProjectTemplateExporter: Sendable {
         /// export sheet shows these in the preview so authors can see
         /// what will travel with the bundle.
         let slashCommandNames: [String]
+        /// Mini-apps under `<project>/.scarf/miniapps/<id>/`, without
+        /// `state.json`. Ids use the same rules as slash-command names.
+        let miniApps: [MiniAppExport]
+    }
+
+    struct MiniAppExport: Sendable {
+        let id: String
+        /// Paths relative to the mini-app directory.
+        let relativeFiles: [String]
     }
 
     /// Inputs collected by the export sheet.
@@ -122,6 +131,7 @@ struct ProjectTemplateExporter: Sendable {
             .loadCommands(at: dir)
             .map(\.name)
             .sorted()
+        let miniApps = Self.miniApps(in: dir, transport: context.makeTransport())
         return ExportPlan(
             templateId: inputs.templateId,
             templateName: inputs.templateName,
@@ -134,7 +144,8 @@ struct ProjectTemplateExporter: Sendable {
             skillIds: inputs.includeSkillIds,
             cronJobs: picked,
             memoryAppendix: inputs.memoryAppendix,
-            slashCommandNames: slashCommandNames
+            slashCommandNames: slashCommandNames,
+            miniApps: miniApps
         )
     }
 
@@ -247,6 +258,20 @@ struct ProjectTemplateExporter: Sendable {
             }
         }
 
+        // Mini-apps (manifest schemaVersion 4). Copy each id's tree except
+        // `state.json`. No grants, consent records, or keys live in this
+        // directory; runtime state stays on the source project.
+        if !plan.miniApps.isEmpty {
+            for app in plan.miniApps {
+                for relative in app.relativeFiles {
+                    let source = plan.projectDir + "/.scarf/miniapps/" + app.id + "/" + relative
+                    let destination = stagingDir + "/miniapps/" + app.id + "/" + relative
+                    try createParent(of: destination)
+                    try copyFromHermes(source, to: destination, transport: transport)
+                }
+            }
+        }
+
         // If the source project was itself installed from a schemaful
         // template, its `.scarf/manifest.json` carries the schema we
         // want to forward to the exported bundle. We carry only the
@@ -260,10 +285,13 @@ struct ProjectTemplateExporter: Sendable {
 
         // Bump schemaVersion based on the most-recent feature carried
         // through:
+        //   v4 — bundle ships mini-apps. An older Scarf rejects the
+        //        bundle rather than installing it without them.
         //   v3 — bundle ships slashCommands (added v2.5).
         //   v2 — bundle ships a config schema (added v2.3).
         //   v1 — schema-less, byte-compatible with v2.2 catalog validators.
         let schemaVersion: Int = {
+            if !plan.miniApps.isEmpty { return 4 }
             if !plan.slashCommandNames.isEmpty { return 3 }
             if forwardedSchema != nil { return 2 }
             return 1
@@ -293,7 +321,8 @@ struct ProjectTemplateExporter: Sendable {
                 cron: plan.cronJobs.isEmpty ? nil : plan.cronJobs.count,
                 memory: (inputs.memoryAppendix?.isEmpty == false) ? TemplateMemoryClaim(append: true) : nil,
                 config: forwardedSchema?.fields.count,
-                slashCommands: plan.slashCommandNames.isEmpty ? nil : plan.slashCommandNames
+                slashCommands: plan.slashCommandNames.isEmpty ? nil : plan.slashCommandNames,
+                miniApps: plan.miniApps.isEmpty ? nil : plan.miniApps.map(\.id)
             ),
             config: forwardedSchema
         )
@@ -306,6 +335,67 @@ struct ProjectTemplateExporter: Sendable {
     }
 
     // MARK: - Private
+
+    /// Mini-app directories whose names match slash-command ids, and the
+    /// files under them except `state.json` and dotfiles.
+    nonisolated static func miniApps(
+        in projectDir: String,
+        transport: any ServerTransport
+    ) -> [MiniAppExport] {
+        let root = projectDir + "/.scarf/miniapps"
+        let names: [String]
+        do {
+            names = try transport.listDirectory(root)
+        } catch {
+            return []
+        }
+        var apps: [MiniAppExport] = []
+        for name in names.sorted() {
+            guard ProjectSlashCommand.validateName(name) == nil else { continue }
+            let files = (try? relativeFiles(at: root + "/" + name, transport: transport)) ?? []
+            let shipped = files.filter { ($0 as NSString).lastPathComponent != "state.json" }
+            guard shipped.contains("miniapp.json") else { continue }
+            apps.append(MiniAppExport(id: name, relativeFiles: shipped))
+        }
+        return apps
+    }
+
+    /// Regular files under `root`, relative to it, skipping dot entries.
+    /// Bounded so a link loop cannot walk forever.
+    nonisolated private static func relativeFiles(
+        at root: String,
+        transport: any ServerTransport
+    ) throws -> [String] {
+        var out: [String] = []
+        func walk(_ relative: String, depth: Int) throws {
+            if depth > 8 { return }
+            let dir = relative.isEmpty ? root : root + "/" + relative
+            let entries = try transport.listDirectory(dir)
+                .filter { !$0.hasPrefix(".") && !$0.contains("/") && $0 != ".." && $0 != "." }
+                .sorted()
+            let paths = entries.map { dir + "/" + $0 }
+            // A nil batch stat is "don't trust this", not "this directory
+            // is empty". Fall back to one stat per entry so a sick batch
+            // does not drop the mini-app from the bundle.
+            let stats = transport.statAll(paths) ?? Dictionary(
+                uniqueKeysWithValues: paths.compactMap { path in
+                    transport.stat(path).map { (path, $0) }
+                }
+            )
+            for name in entries {
+                let rel = relative.isEmpty ? name : relative + "/" + name
+                let full = dir + "/" + name
+                guard let stat = stats[full], !stat.isSymbolicLink else { continue }
+                if stat.isDirectory {
+                    try walk(rel, depth: depth + 1)
+                } else {
+                    out.append(rel)
+                }
+            }
+        }
+        try walk("", depth: 0)
+        return out
+    }
 
     /// Copy a file whose source lives on the Hermes side (possibly remote)
     /// into a local destination path under the staging dir. Using the
