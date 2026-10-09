@@ -87,6 +87,15 @@ public actor AgentCoordinator {
         try await requiredBackend(session.backendID).resumeSession(session)
     }
 
+    /// Routes structured history fetch to the session's backend.
+    ///
+    /// Backends without a real history source return `[]` (see
+    /// ``AgentBackend/fetchConversationHistory(for:)``); callers must not
+    /// treat emptiness as proof the backend advertised history support.
+    public func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
+        try await requiredBackend(session.backendID).fetchConversationHistory(for: session)
+    }
+
     public func send(_ message: AgentMessage, in session: AgentSession) async throws {
         try await requiredBackend(session.backendID).send(message, in: session)
     }
@@ -101,6 +110,37 @@ public actor AgentCoordinator {
 
     public func cancel(session: AgentSession) async throws { await try requiredBackend(session.backendID).cancel(session: session) }
     public func close(session: AgentSession) async throws { await try requiredBackend(session.backendID).close(session: session) }
+
+    /// Routes a live model switch to the session's backend.
+    ///
+    /// Backends that do not support mid-session model changes throw
+    /// ``AgentError`` with code `agent.set-session-model-unsupported`.
+    public func setSessionModel(
+        session: AgentSession,
+        modelID: String,
+        providerID: String?
+    ) async throws {
+        try await requiredBackend(session.backendID).setSessionModel(
+            session: session,
+            modelID: modelID,
+            providerID: providerID
+        )
+    }
+
+    /// Routes a live approval-mode switch to the session's backend.
+    ///
+    /// Backends that do not support `session/set_mode` throw
+    /// ``AgentError`` with code `agent.set-session-mode-unsupported`.
+    public func setSessionMode(
+        session: AgentSession,
+        modeID: String
+    ) async throws {
+        try await requiredBackend(session.backendID).setSessionMode(
+            session: session,
+            modeID: modeID
+        )
+    }
+
     public func latestRoutedEventSequence() -> UInt64 { routedEventSequence }
 
     private func requiredBackend(_ id: AgentID) async throws -> any AgentBackend {

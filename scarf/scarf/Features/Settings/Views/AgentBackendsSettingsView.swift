@@ -8,6 +8,7 @@ import ScarfDesign
 struct AgentBackendsSettingsView: View {
     let viewModel: SettingsViewModel
     @State private var statusModel: AgentBackendsStatusViewModel
+    @AppStorage(HermesAgentChatOptIn.userDefaultsKey) private var hermesAgentChatEnabled = false
 
     init(viewModel: SettingsViewModel) {
         self.viewModel = viewModel
@@ -21,6 +22,21 @@ struct AgentBackendsSettingsView: View {
                     .scarfStyle(.footnote)
                     .foregroundStyle(ScarfColor.foregroundMuted)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Toggle(isOn: $hermesAgentChatEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use AgentChat for Hermes projects")
+                            .scarfStyle(.body)
+                        Text("Experimental. Routes Hermes project chats through the multi-agent AgentChat surface. ChatView remains the default when off and stays supported — turn this off anytime.")
+                            .scarfStyle(.caption)
+                            .foregroundStyle(ScarfColor.foregroundMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .accessibilityLabel("Use AgentChat for Hermes projects")
+                .accessibilityHint("Experimental. When on, Hermes project chats use AgentChat instead of ChatView. Off by default.")
+                .help("Experimental opt-in. Hermes projects use AgentChat when enabled; ChatView remains the default escape hatch.")
 
                 if statusModel.isLoading && statusModel.snapshots.isEmpty {
                     HStack(spacing: ScarfSpace.s2) {
@@ -108,7 +124,7 @@ private struct AgentBackendStatusRow: View {
                 Text(detailText)
                     .scarfStyle(.caption)
                     .foregroundStyle(ScarfColor.foregroundMuted)
-                    .lineLimit(2)
+                    .lineLimit(3)
             }
 
             Spacer(minLength: ScarfSpace.s3)
@@ -139,16 +155,6 @@ private struct AgentBackendStatusRow: View {
     }
 
     private var detailText: String {
-        switch snapshot.status {
-        case .available(let version):
-            if let version, !version.isEmpty { return version }
-            return snapshot.id == .hermes ? "Hermes runtime detected" : "Runtime detected"
-        case .notInstalled:
-            return snapshot.id == .claudeCode
-                ? "Claude Code executable was not found"
-                : "Runtime executable was not found"
-        case .unavailable(let reason):
-            return reason
-        }
+        AgentBackendStatusFormatting.detailText(for: snapshot)
     }
 }

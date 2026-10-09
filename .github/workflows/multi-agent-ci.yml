@@ -1,4 +1,7 @@
 name: Multi-Agent Branch CI
+# Phase 5 auth-health filter includes AgentAuth.
+# Phase 4 permission coordinator filter includes AgentPermission.
+# Phase 3 extension catalog filter includes AgentExtension|AgentSlash.
 
 on:
   push:
@@ -7,6 +10,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/multi-agent-architecture
     paths:
       - 'scarf/**'
       - '.github/workflows/multi-agent-ci.yml'
@@ -52,7 +56,7 @@ jobs:
       - name: Run multi-agent behavior tests
         run: >-
           swift test --filter
-          'AgentConversation|AgentCoordinator|ProjectAgentPreference'
+          'AgentConversation|AgentCoordinator|ProjectAgentPreference|AgentSlash|AgentExtension|AgentPermission|AgentAuth|HermesPathSetInstalled|AgentModelPicker|SessionAttributionRecent'
 
   macos-build:
     name: macOS App Build
@@ -105,5 +109,112 @@ jobs:
         with:
           name: macos-xcodebuild-log
           path: build/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  # scarfTests (host-app) cases such as Claude process close/cancel are outside
+  # the ScarfCore swift-test filter. Suite-level -only-testing selects both
+  # XCTest and Swift Testing identifiers without the function-paren gotcha.
+  # Provider diagnostics (`AgentProviderDiagnosticsTests`) share this gate.
+  claude-process-tests:
+    name: Claude Process Tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+      - name: Ensure Metal toolchain
+        run: |
+          if ! xcrun metal --version >/dev/null 2>&1 && ! xcrun -f metal >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Resolve packages
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project scarf/scarf.xcodeproj
+      - name: Run Claude Code backend process lifecycle tests
+        shell: bash
+        run: |
+          set +e
+          mkdir -p build
+          xcodebuild \
+            -project scarf/scarf.xcodeproj \
+            -scheme scarf \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build/DerivedData-claude-process \
+            -only-testing:scarfTests/ClaudeCodeBackendTests \
+            -only-testing:scarfTests/ClaudeProcessConfigurationTests \
+            -only-testing:scarfTests/AgentProviderDiagnosticsTests \
+            -only-testing:scarfTests/AgentChatViewModelModelSelectionTests \
+            -only-testing:scarfTests/AgentChatViewModelProductionParityTests \
+            -only-testing:scarfTests/AgentChatRouterViewModelTests \
+            -only-testing:scarfTests/AgentRuntimeRemoteHermesOptInTests \
+            -only-testing:scarfTests/HermesBackendTests \
+            -skipPackagePluginValidation \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            test > build/claude-process-tests.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo '::group::Filtered xcodebuild test diagnostics'
+            grep -nE 'error:|fatal error:|failed|Test Case|Test Suite|Swift Testing|Claude|Hermes|process|model|\*\* TEST FAILED \*\*|\*\* TEST SUCCEEDED \*\*' build/claude-process-tests.log | tail -n 240 || true
+            echo '::endgroup::'
+            exit "$status"
+          fi
+          # Fail closed if the suite never executed (empty filter / host miss).
+          if ! grep -qE 'ClaudeCodeBackendTests|Claude Code agent backend' build/claude-process-tests.log; then
+            echo 'ClaudeCodeBackendTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'ClaudeProcessConfigurationTests|Claude Code process configuration' build/claude-process-tests.log; then
+            echo 'ClaudeProcessConfigurationTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentProviderDiagnosticsTests|Agent provider installation diagnostics' build/claude-process-tests.log; then
+            echo 'AgentProviderDiagnosticsTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentChatViewModelModelSelectionTests|Agent chat model selection' build/claude-process-tests.log; then
+            echo 'AgentChatViewModelModelSelectionTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'HermesBackendTests|Hermes agent backend' build/claude-process-tests.log; then
+            echo 'HermesBackendTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentChatViewModelProductionParityTests|Agent chat production parity' build/claude-process-tests.log; then
+            echo 'AgentChatViewModelProductionParityTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentChatRouterViewModelTests|Agent chat router opt-in' build/claude-process-tests.log; then
+            echo 'AgentChatRouterViewModelTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          if ! grep -qE 'AgentRuntimeRemoteHermesOptInTests|Remote Hermes AgentChat opt-in smoke' build/claude-process-tests.log; then
+            echo 'AgentRuntimeRemoteHermesOptInTests did not appear in xcodebuild output'
+            tail -n 80 build/claude-process-tests.log
+            exit 1
+          fi
+          tail -n 40 build/claude-process-tests.log
+      - name: Upload Claude process test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-process-tests-log
+          path: build/claude-process-tests.log
           if-no-files-found: warn
           retention-days: 7

@@ -6,9 +6,10 @@ import ScarfCore
 ///
 /// A project handoff must be resolved *before* the legacy `ChatView` renders,
 /// because that view consumes `AppCoordinator.pendingProjectChat` on appear.
-/// Old/missing project records remain Hermes. Explicit non-Hermes preferences
-/// are routed through `AgentRuntime`; an unavailable backend is surfaced rather
-/// than silently falling back to Hermes.
+/// Old/missing project records remain Hermes. Hermes projects stay on legacy
+/// `ChatView` unless `scarf.experimental.hermesAgentChat` is enabled. Explicit
+/// non-Hermes preferences are routed through `AgentRuntime`; an unavailable
+/// backend is surfaced rather than silently falling back to Hermes.
 @MainActor
 @Observable
 final class AgentChatRouterViewModel {
@@ -22,14 +23,20 @@ final class AgentChatRouterViewModel {
     private let context: ServerContext
     private let projectStore: ProjectStore
     private let runtime: AgentRuntime
+    /// Injectable for tests. Production reads `HermesAgentChatOptIn.isEnabled`.
+    private let isHermesAgentChatEnabled: () -> Bool
 
     private(set) var route: Route = .legacy(projectPath: nil)
     private var requestedProjectPath: String?
 
-    init(context: ServerContext) {
+    init(
+        context: ServerContext,
+        isHermesAgentChatEnabled: @escaping () -> Bool = { HermesAgentChatOptIn.isEnabled }
+    ) {
         self.context = context
         self.projectStore = ProjectStore(context: context)
         self.runtime = AgentRuntime(context: context)
+        self.isHermesAgentChatEnabled = isHermesAgentChatEnabled
     }
 
     /// Resolve one project handoff. Repeated calls for the same path are cheap,
@@ -66,29 +73,75 @@ final class AgentChatRouterViewModel {
             )
 
         case .loaded(let project):
-            guard project.preferredAgentID != .hermes else {
+            let preferred = project.preferredAgentID
+            if preferred == .hermes, !isHermesAgentChatEnabled() {
                 route = .legacy(projectPath: projectPath)
                 return
             }
 
             guard let controller = await runtime.conversationController(for: project) else {
                 let detail = context.isRemote
-                    ? "\(project.preferredAgentID.rawValue) is not available in this remote window."
-                    : "\(project.preferredAgentID.rawValue) is not available on this Mac."
+                    ? "\(preferred.rawValue) is not available in this remote window."
+                    : "\(preferred.rawValue) is not available on this Mac."
                 route = .unavailable(
                     projectPath: projectPath,
-                    backendID: project.preferredAgentID,
+                    backendID: preferred,
                     message: detail
                 )
                 return
+            }
+
+            let backendID = preferred
+            let serverContext = context
+            let agentRuntime = runtime
+
+            // Only Hermes reads `HermesCapabilities` (ACP version/feature
+            // flags) today — Claude has no such probe, and the view model
+            // only consults this loader on the Hermes boot/send paths.
+            var capabilitiesLoader: AgentChatViewModel.CapabilitiesLoader?
+            if backendID == .hermes {
+                let capabilitiesStore = HermesCapabilitiesStore(context: serverContext)
+                capabilitiesLoader = { await capabilitiesStore.confirmedCapabilities() }
             }
 
             route = .agent(
                 project: project,
                 viewModel: AgentChatViewModel(
                     controller: controller,
-                    backendID: project.preferredAgentID,
-                    workingDirectory: URL(fileURLWithPath: project.rootPath)
+                    backendID: backendID,
+                    workingDirectory: URL(fileURLWithPath: project.rootPath),
+                    extensionCatalogLoader: {
+                        // Hermes walks the installed home. Claude merges live
+                        // initialize `agents` into the empty static skills stub
+                        // — never scrape ~/.claude.
+                        if backendID == .hermes {
+                            return AgentExtensionCatalogs.makeCatalog(
+                                fromHermesHome: serverContext
+                            )
+                        }
+                        let base = AgentExtensionCatalogs.makeCatalog()
+                        guard let backend = await agentRuntime.backend(for: project) else {
+                            return base
+                        }
+                        let live = await backend.discoveredExtensions()
+                        guard !live.isEmpty else { return base }
+                        return AgentExtensionCatalog(entries: base.entries + live)
+                    },
+                    modelsLoader: {
+                        guard let backend = await agentRuntime.backend(for: project) else {
+                            return []
+                        }
+                        return (try? await backend.models()) ?? []
+                    },
+                    serverContext: serverContext,
+                    projectPath: project.rootPath,
+                    authHealthLoader: {
+                        guard let backend = await agentRuntime.backend(for: project) else {
+                            return .notProbed
+                        }
+                        return await backend.authHealth()
+                    },
+                    capabilitiesLoader: capabilitiesLoader
                 )
             )
         }

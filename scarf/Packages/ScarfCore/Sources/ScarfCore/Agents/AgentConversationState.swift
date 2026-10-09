@@ -22,14 +22,77 @@ public struct AgentConversationState: Equatable, Sendable {
 
     public private(set) var fileChanges: [AgentFileChange] = []
     public private(set) var permissionRequest: AgentPermissionRequest?
+    /// Backend-neutral permission queue. Enqueued from `permissionRequested`
+    /// events; answered/cancelled via controller respond/cancel. Not durable.
+    public private(set) var permissionCoordinator = AgentPermissionCoordinator()
     public private(set) var usage: AgentUsage?
     public private(set) var error: AgentError?
     public private(set) var stopReason: String?
+    /// Live slash commands from the active backend (Hermes ACP discovery).
+    /// Cleared on `sessionClosed`. Not part of durable transcript fidelity.
+    public private(set) var discoveredSlashCommands: [AgentSlashCommandDescriptor] = []
 
     public private(set) var isRunning = false
     public private(set) var isClosed = false
 
     public init() {}
+
+    /// Mark a pending permission answered and advance the presented request.
+    @discardableResult
+    public mutating func answerPermission(id: String, optionID: String) -> Bool {
+        let answered = permissionCoordinator.answer(id: id, optionID: optionID)
+        guard answered else { return false }
+        permissionRequest = permissionCoordinator.presented?.asAgentPermissionRequest
+        return true
+    }
+
+    /// Mark a pending permission cancelled and advance the presented request.
+    @discardableResult
+    public mutating func cancelPermission(id: String) -> Bool {
+        let cancelled = permissionCoordinator.cancel(id: id)
+        guard cancelled else { return false }
+        permissionRequest = permissionCoordinator.presented?.asAgentPermissionRequest
+        return true
+    }
+
+    /// Hydrate committed transcript fields after a session identity restore.
+    ///
+    /// Does not touch drafts, permissions, or lifecycle flags — those remain
+    /// owned by the live event reducer / controller. When both calls/commands
+    /// and their results are present, status is aligned by id the same way
+    /// the live reducer does on completion events.
+    public mutating func restoreDurableTranscript(
+        messages: [AgentMessage],
+        toolResults: [String: AgentToolResult] = [:],
+        usage: AgentUsage? = nil,
+        toolCalls: [AgentToolCall] = [],
+        commands: [AgentCommand] = [],
+        commandOutput: [String: String] = [:],
+        commandResults: [String: AgentCommandResult] = [:],
+        fileChanges: [AgentFileChange] = [],
+        reasoningBlocks: [String] = []
+    ) {
+        self.messages = messages
+        self.toolResults = toolResults
+        self.usage = usage
+        self.toolCalls = toolCalls
+        self.commands = commands
+        self.commandOutput = commandOutput
+        self.commandResults = commandResults
+        self.fileChanges = fileChanges
+        self.reasoningBlocks = reasoningBlocks
+
+        for (toolCallID, result) in toolResults {
+            if let index = self.toolCalls.firstIndex(where: { $0.id == toolCallID }) {
+                self.toolCalls[index].status = result.status
+            }
+        }
+        for (commandID, result) in commandResults {
+            if let index = self.commands.firstIndex(where: { $0.id == commandID }) {
+                self.commands[index].status = result.exitCode == 0 ? .completed : .failed
+            }
+        }
+    }
 
     public mutating func beginUserTurn(_ content: String) {
         messages.append(AgentMessage(role: .user, content: content))
@@ -37,7 +100,7 @@ public struct AgentConversationState: Equatable, Sendable {
         isClosed = false
         stopReason = nil
         error = nil
-        permissionRequest = nil
+        clearLivePermissions()
     }
 
     public mutating func apply(_ event: AgentEvent) {
@@ -95,27 +158,40 @@ public struct AgentConversationState: Equatable, Sendable {
 
         case .permissionRequested(let request):
             permissionRequest = request
+            if let session {
+                permissionCoordinator.record(.forEvent(request, session: session))
+            }
 
         case .usageUpdated(let usage):
             self.usage = usage
+
+        case .availableCommandsUpdated(let commands):
+            discoveredSlashCommands = commands
 
         case .turnCompleted(let stopReason):
             commitReasoningDraft()
             commitAssistantDraft()
             self.stopReason = stopReason
-            permissionRequest = nil
+            clearLivePermissions()
             isRunning = false
 
         case .sessionClosed:
             commitReasoningDraft()
             commitAssistantDraft()
-            permissionRequest = nil
+            clearLivePermissions()
+            discoveredSlashCommands = []
             isRunning = false
             isClosed = true
 
         case .error(let error):
             self.error = error
         }
+    }
+
+    /// Drop live pending permissions while keeping answered/cancelled history.
+    private mutating func clearLivePermissions() {
+        permissionRequest = nil
+        permissionCoordinator.clearPending()
     }
 
     private mutating func commitAssistantDraft() {

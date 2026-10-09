@@ -3,8 +3,14 @@ import ScarfCore
 import ScarfDesign
 
 /// The per-project settings that apply to this project's CHAT sessions:
-/// which model they run on, and whether they open with edits
-/// pre-approved.
+/// which agent runtime they use, which Hermes model preset they run on
+/// (Hermes only), and whether they open with edits pre-approved (Hermes).
+///
+/// **Agent runtime.** Stored on `ScarfProject.preferredAgentID` via
+/// `ProjectStore.setPreferredAgentID`. Hermes remains the compatibility
+/// default; Claude appears only when installation diagnostics report it
+/// available in this window. Multi-agent model discovery is not wired —
+/// Hermes model presets below stay the Hermes catalog path.
 ///
 /// **Model.** Reads the current binding from
 /// `<project>/.scarf/manifest.json` and writes back via
@@ -26,6 +32,7 @@ import ScarfDesign
 /// The model section is UNGATED (P49 / round-5 decision 9): ACP
 /// `session/set_model` is defined in the adapter at every supported tag
 /// (`acp_adapter/server.py:482` @ v2026.3.30 = 0.6.0; `:929` @ v2026.9.7).
+/// Hermes model/auto-accept rows hide when the project default is Claude.
 struct ProjectChatSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     let context: ServerContext
@@ -39,6 +46,11 @@ struct ProjectChatSettingsSheet: View {
     @State private var errorMessage: String?
     @State private var isSaving = false
     @State private var autoAcceptEdits = false
+    @State private var selectedAgentID: AgentID = .hermes
+    @State private var agentOptions: [ProjectAgentPreferenceOption] = []
+    @State private var agentAvailabilityNote: String?
+    @State private var isCheckingAgentBackends = false
+    @State private var showsHermesChatSettings = true
 
     /// The store is stateless (a defaults key + the machine HMAC key), so
     /// a fresh value per view is free and keeps this testable in
@@ -58,18 +70,24 @@ struct ProjectChatSettingsSheet: View {
                         ProgressView()
                             .padding(ScarfSpace.s4)
                     } else {
-                        if capabilities.hasSessionEditAutoApproval {
-                            autoAcceptRow
-                        }
+                        agentRuntimeRow
 
-                        defaultRow
-
-                        if presets.isEmpty {
-                            emptyPresetsRow
-                        } else {
-                            ForEach(presets) { preset in
-                                presetRow(preset)
+                        if showsHermesChatSettings {
+                            if capabilities.hasSessionEditAutoApproval {
+                                autoAcceptRow
                             }
+
+                            defaultRow
+
+                            if presets.isEmpty {
+                                emptyPresetsRow
+                            } else {
+                                ForEach(presets) { preset in
+                                    presetRow(preset)
+                                }
+                            }
+                        } else {
+                            claudeRuntimeNote
                         }
 
                         if let errorMessage {
@@ -97,7 +115,7 @@ struct ProjectChatSettingsSheet: View {
                 }
                 Button("Save") { save() }
                     .buttonStyle(ScarfPrimaryButton())
-                    .disabled(isSaving)
+                    .disabled(isSaving || isCheckingAgentBackends)
                     .keyboardShortcut(.return, modifiers: .command)
             }
             .padding(ScarfSpace.s4)
@@ -105,6 +123,69 @@ struct ProjectChatSettingsSheet: View {
         }
         .frame(minWidth: 520, minHeight: 420)
         .task { await load() }
+    }
+
+    private var agentRuntimeRow: some View {
+        ScarfCard {
+            VStack(alignment: .leading, spacing: ScarfSpace.s2) {
+                HStack(alignment: .firstTextBaseline, spacing: ScarfSpace.s2) {
+                    Text("Agent runtime")
+                        .scarfStyle(.title3)
+                    if isCheckingAgentBackends {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                Text("Choose which agent Scarf opens for new chats in this project. Hermes remains the default.")
+                    .scarfStyle(.footnote)
+                    .foregroundStyle(ScarfColor.foregroundMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Picker("Agent runtime", selection: $selectedAgentID) {
+                    ForEach(agentOptions) { option in
+                        Text(option.displayName)
+                            .tag(option.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .disabled(isCheckingAgentBackends || agentOptions.count < 2)
+                .accessibilityIdentifier("project.chatSettings.agent")
+                .onChange(of: selectedAgentID) { _, newValue in
+                    showsHermesChatSettings = (newValue == .hermes)
+                }
+
+                if let selected = agentOptions.first(where: { $0.id == selectedAgentID }) {
+                    Text(selected.detail)
+                        .scarfStyle(.caption)
+                        .foregroundStyle(ScarfColor.foregroundMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let agentAvailabilityNote {
+                    Label(agentAvailabilityNote, systemImage: "info.circle")
+                        .scarfStyle(.caption)
+                        .foregroundStyle(ScarfColor.foregroundMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var claudeRuntimeNote: some View {
+        ScarfCard {
+            VStack(alignment: .leading, spacing: ScarfSpace.s2) {
+                Text("Claude Code project chat")
+                    .scarfStyle(.title3)
+                Text("Hermes model presets and auto-accept edits apply only when Hermes is the project default. Claude model discovery is not available in Scarf yet — Claude uses its own default model.")
+                    .scarfStyle(.footnote)
+                    .foregroundStyle(ScarfColor.foregroundMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     /// The auto-accept toggle, with the caveat stated on the card rather
@@ -205,6 +286,8 @@ struct ProjectChatSettingsSheet: View {
         // capability-degraded host still shows the truth.
         autoAcceptEdits = autoAcceptStore.isEnabled(projectId: project.path)
 
+        await refreshAgentPreference()
+
         let service = ModelPresetService.shared(for: context)
         do {
             let loaded = try await service.list()
@@ -234,6 +317,41 @@ struct ProjectChatSettingsSheet: View {
         self.isLoading = false
     }
 
+    @MainActor
+    private func refreshAgentPreference() async {
+        guard !isCheckingAgentBackends else { return }
+        isCheckingAgentBackends = true
+        defer { isCheckingAgentBackends = false }
+
+        let ctx = context
+        let path = project.path
+        let name = project.name
+        let storedPreference = await Task.detached {
+            let store = ProjectStore(context: ctx)
+            return store.load(projectPath: path)?.preferredAgentID
+                ?? store.loadOrDerive(projectPath: path, name: name).preferredAgentID
+        }.value
+
+        let snapshots = await AgentRuntime(context: context).statusSnapshots()
+        let presentation = ProjectAgentPreferencePresenter.make(
+            preferredAgentID: storedPreference,
+            probes: snapshots.map { snapshot in
+                ProjectAgentBackendProbe(
+                    id: snapshot.id,
+                    displayName: snapshot.displayName,
+                    executablePath: snapshot.executablePath,
+                    status: snapshot.status,
+                    authHealth: snapshot.authHealth
+                )
+            },
+            isRemoteContext: context.isRemote
+        )
+        agentOptions = presentation.options
+        selectedAgentID = presentation.selectedAgentID
+        agentAvailabilityNote = presentation.availabilityNote
+        showsHermesChatSettings = presentation.showsHermesChatSettings
+    }
+
     /// `ProjectModelPresetBinding.bind` is a read-modify-write of the
     /// project's `.scarf/manifest.json` through the transport — two round
     /// trips on a remote project — and ran inline on the MainActor, freezing
@@ -248,7 +366,8 @@ struct ProjectChatSettingsSheet: View {
         // that failure has to be SAID rather than swallowed — silently
         // not saving a setting the user just switched on would leave them
         // expecting no prompts and getting them.
-        if capabilities.hasSessionEditAutoApproval {
+        // Only meaningful for Hermes project chat.
+        if showsHermesChatSettings, capabilities.hasSessionEditAutoApproval {
             guard autoAcceptStore.setEnabled(autoAcceptEdits, projectId: project.path) else {
                 isSaving = false
                 errorMessage = "Couldn't save the auto-accept setting: this Mac's Keychain wouldn't provide the key Scarf signs it with. Unlock your login keychain and try again."
@@ -258,12 +377,21 @@ struct ProjectChatSettingsSheet: View {
 
         let ctx = context
         let project = project
+        let preferredAgentID = selectedAgentID
+        let shouldBindHermesModel = showsHermesChatSettings
         let newValue: String? = useGlobalDefault ? nil : selectedID?.uuidString
         Task {
             let failure: String? = await Task.detached {
                 do {
-                    try ProjectModelPresetBinding(context: ctx)
-                        .bind(presetID: newValue, to: project)
+                    try ProjectStore(context: ctx).setPreferredAgentID(
+                        preferredAgentID,
+                        projectPath: project.path,
+                        name: project.name
+                    )
+                    if shouldBindHermesModel {
+                        try ProjectModelPresetBinding(context: ctx)
+                            .bind(presetID: newValue, to: project)
+                    }
                     return nil
                 } catch {
                     return error.localizedDescription

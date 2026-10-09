@@ -78,7 +78,9 @@ Session-isolation tests now wait for deterministic state conditions instead of r
 
 ### Current lifecycle TDD milestone
 
-The current RED regression demonstrates that starting a replacement session can leave the previous active backend session open. The next production change must close/release the previous session deterministically while preserving Hermes semantics.
+Replacement-session cleanup is GREEN on `cursor/session-lifecycle-hardening-89c0`. Starting or resuming a different session closes the previous active session. Late scoped events from the replaced session do not modify the new one. After `close()`, scoped and legacy unscoped events do not mutate or resurrect the conversation. Hermes remains the default, and Claude permissions stay unadvertised.
+
+The adoption strategy in this document is unchanged.
 
 Relevant recent commits:
 
@@ -87,6 +89,11 @@ Relevant recent commits:
 - `9cbdb9b` — deterministic session-isolation test.
 - `cfdc588` — RED replacement-session cleanup test.
 - `830f55f` — updated multi-agent roadmap and initial CLUI adoption analysis.
+- `3d7c5c81` — close the previous session before creating a replacement.
+- `bbbc5e11` — lock late scoped events after replacement.
+- `83cf7bfa` — close the previous session when resume switches identity.
+- `e5de0682` — ignore events after close, including unscoped legacy events.
+- `568f1366` — rapid replacements close each outgoing session.
 
 ---
 
@@ -584,40 +591,54 @@ Each can be evaluated independently after multi-agent foundations are stable.
 
 ### Phase 1 — finish Claude Code foundation
 
-- [ ] Make replacement-session cleanup GREEN.
-- [ ] Verify Hermes behavior remains unchanged.
-- [ ] Add late-event-after-switch regression coverage.
-- [ ] Add late-event-after-close regression coverage.
-- [ ] Harden Claude cancel/close/process cleanup.
-- [ ] Add Claude installation/version diagnostics.
-- [ ] Audit resume/session identity fidelity.
-- [ ] Audit Claude event normalization against CLUI.
-- [ ] Audit capability flags.
+- [x] Make replacement-session cleanup GREEN.
+- [x] Verify Hermes routing remains the default and resume-to-Hermes closes the previous backend session.
+- [x] Add late-event-after-switch regression coverage.
+- [x] Add late-event-after-close regression coverage, including unscoped legacy events.
+- [ ] Harden Claude cancel/close/process cleanup with an app-target test. Process-manager replacement close already exists; this environment cannot compile the macOS target.
+- [x] Add Claude installation/version diagnostics.
+- [x] Audit resume/session identity fidelity beyond controller cleanup.
+- [ ] Audit Claude event normalization against CLUI. The reference repository was not readable here.
+- [x] Audit capability flags. Permissions advertised only behind host-prompting launch + round-trip audit.
 
 ### Phase 2 — sessions and provider semantics
 
 - [ ] Compare CLUI session persistence with Scarf conversation state.
-- [ ] Define persisted backend/session identity.
-- [ ] Port useful tool-result merge semantics/tests.
-- [ ] Normalize usage accounting.
-- [ ] Add restart/resume tests.
+- [x] Define persisted backend/session identity (`AgentConversationIdentity` / `AgentConversationIdentityStore`).
+- [x] Wire production callers to HermesPathSet identity path (`makePersisting` / `AgentRuntime` / `startOrRestorePersistedSession`).
+- [x] Persist/restore durable transcript slice (`AgentConversationTranscriptStore` — messages / toolResults / usage).
+- [x] Deeper activity fields on the same durable snapshot (`toolCalls` / commands / files / reasoning).
+- [x] Backend-history reconcile contract (`reconciling(withBackendHistory:)` — prefer Scarf when empty; merge by message id).
+- [ ] Port useful tool-result merge semantics/tests (beyond Scarf-owned snapshot restore).
+- [ ] Normalize usage accounting (beyond snapshot restore).
+- [x] Add restart/resume identity tests (`restorePersistedSession`).
+- [x] Add restart/resume transcript fidelity tests (`AgentConversationTranscriptFidelityTests`).
+- [x] Add backend-history reconciliation tests (`AgentConversationBackendHistoryReconciliationTests`).
+- [x] Wire `fetchConversationHistory` into restore (`AgentConversationBackendHistoryFetchTests`; Hermes/Claude return `[]` until a structured source exists).
+- [x] Implement first real Hermes structured history source behind `fetchConversationHistory` (`HermesAgentConversationHistory` / state.db; Claude still `[]`).
+- [x] Decide cross-source turn matching when backend ids ≠ Scarf UUIDs (role + exact content after id pass).
+- [x] Fixture `state.db` end-to-end restore through `restorePersistedSession` (`AgentConversationHermesStateDBRestoreTests`).
+- [ ] Claude structured history when a verified protocol/file source exists (**blocked** — `--resume` / stream-json only; no verified `[AgentMessage]` source; do not invent parsers).
 - [ ] Define migration strategy for persisted session schema.
 
 ### Phase 3 — slash commands and extensions
 
-- [ ] Define backend-aware Scarf command registry.
-- [ ] Adapt CLUI slash routing concepts.
-- [ ] Build Scarf-native slash hint UI.
-- [ ] Define unified extension catalog model.
-- [ ] Integrate Hermes skills/plugins without regression.
+- [x] Define backend-aware Scarf command registry model (`AgentSlashCommandDescriptor` / `AgentSlashCommandRegistry`; capability + backend gating; no UI yet).
+- [x] Wire Scarf-native catalog sources + hint-list query (`AgentSlashCommandCatalogs`, `AgentSlashCommandHint` / `hints`; Hermes ACP static truth; Claude stub empty; CI [37356365121](https://github.com/dsmithnh3/scarf/actions/runs/37356365121)).
+- [x] Build Scarf-native slash hint UI onto `hints(...)` (`AgentSlashHintPresenter`, `AgentChatViewModel` draft wiring, `AgentSlashHintMenu`; ScarfDesign only; no CLUI transplant; CI [37358088673](https://github.com/dsmithnh3/scarf/actions/runs/37358088673)).
+- [x] Wire live Hermes ACP `available_commands_update` into the Scarf-native registry (`AgentSlashCommandACPDiscovery`, `mergingLiveHermesACPCommands`, event/state/ViewModel refresh).
+- [ ] Adapt CLUI slash routing concepts (Scarf-native only).
+- [x] Define unified extension catalog model (`AgentExtensionKind` / `AgentExtensionDescriptor` / `AgentExtensionCatalog`; Hermes plugin/skill/MCP fixture adapters; Claude skills + Scarf-local stubs empty; no UI).
+- [x] Integrate Hermes skills/plugins/MCP read-only into the catalog (`AgentExtensionHermesLoaders`, `makeCatalog(fromHermesHome:)`; Claude stub empty; no UI).
 - [ ] Add Claude Code skills/MCP discovery where supported.
 - [ ] Adapt CLUI MCP catalog concepts.
 
 ### Phase 4 — permissions
 
-- [ ] Define generic permission request/response model.
-- [ ] Adapt CLUI permission coordinator concepts.
-- [ ] Preserve Hermes permission behavior.
+- [x] Define generic permission request/response model (`AgentPermissionRecord` / status / scope).
+- [x] Adapt CLUI permission coordinator concepts (`AgentPermissionCoordinator` queue state machine; no UI transplant).
+- [x] Preserve Hermes permission behavior (numeric ACP id round-trip via `hermes(from:)` / `asAgentPermissionRequest`; queue semantics match Rich Chat).
+- [x] Wire coordinator into conversation respond/cancel (`AgentConversationState.permissionCoordinator` + controller; Hermes-preserving).
 - [ ] Implement Claude permission round trip.
 - [ ] Enable Claude permission capability only after tests pass.
 
@@ -782,14 +803,10 @@ The key architectural rule is consistent throughout:
 
 ## 23. Immediate next action
 
-Return to the current lifecycle RED test introduced by `cfdc588`. Implement the minimum correct replacement-session cleanup in `AgentConversationController`, verify the targeted test becomes GREEN, run all three CI gates, and commit. Then begin the code-level CLUI audit in this order:
+Updated 2026-10-06: Phases 1–5 foundations are largely GREEN on `cursor/session-lifecycle-hardening-89c0`. Many Priority A CLUI *concepts* (slash registry/UI, permission coordinator, extensions catalog model, provider diagnostics) are already Scarf-native.
 
-1. Claude provider/event normalization;
-2. session models/persistence/tool merging;
-3. slash commands;
-4. skills/plugins/MCP;
-5. permission coordinator;
-6. provider bootstrap/settings;
-7. Codex provider/normalizer.
+**`macOS-CLUI-CC` was read locally on 2026-10-06.** Ranked steal/adapt/skip (order unchanged): `documents/research/2026-10-06-clui-scarf-production-transfer.md`. Installed CLI: 2.1.289.
 
-This order maximizes reuse while keeping the critical Hermes + Claude Code foundation stable.
+**Done on this PR:** Claude auth/initialize/slash (`6ec474d7`); read-only extensions browser + Hermes `models()` bridge (`f225304c`); Claude model Menu (restart with `--model`), stream-decoder gaps (`input_json_delta`, rate limit, `ExitPlanMode` plan callout), and initialize `agents` → Claude skills; Hermes multi-agent ACP `session/set_model` adapter prep (`AgentBackend.setSessionModel` + VM path; Hermes projects still use legacy `ChatView` — no strangler flip); Claude history re-probe 2026-10-08 still blocked (`documents/research/2026-10-08-claude-structured-history-probe.md`); Codex first-slice plan doc (`documents/plans/2026-10-08-codex-adapter-first-slice.md`).
+
+**Done on this PR (B + opt-in):** `scarf.experimental.hermesAgentChat` (default off) + Hermes AgentChat parity (resume attribution bridge, presets, set_mode/auto-accept, preflight, transcript/slash, remote controller smoke) + Claude install/`claude login` guidance and richer AgentChat errors/activity. History still `[]`. **Do next:** soak → separate Hermes default-flip task; merge when four CI gates green; Codex adapter per plan doc; native loops (Priority C). **Still deferred / skip:** hard-flip without soak; Claude JSONL history; OAuth / Keychain parsers; Opal shell; second coordinator; hard-coded opus/sonnet/haiku.

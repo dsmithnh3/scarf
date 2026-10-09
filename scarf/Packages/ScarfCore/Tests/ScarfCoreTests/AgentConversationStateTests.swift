@@ -100,6 +100,63 @@ struct AgentConversationStateTests {
         #expect(state.usage == usage)
     }
 
+    @Test("restoreDurableTranscript rehydrates activity and aligns result statuses")
+    func restoreDurableActivityFields() {
+        var state = AgentConversationState()
+        let toolCall = AgentToolCall(
+            id: "tool-1",
+            title: "Read file",
+            kind: "read",
+            status: .running,
+            input: "README.md"
+        )
+        let toolResult = AgentToolResult(
+            toolCallID: "tool-1",
+            status: .completed,
+            output: "contents"
+        )
+        let command = AgentCommand(id: "cmd-1", command: "git status", status: .running)
+        let commandResult = AgentCommandResult(commandID: "cmd-1", exitCode: 1, output: "dirty")
+        let file = AgentFileChange(path: "/tmp/a.swift", kind: .created)
+        let usage = AgentUsage(inputTokens: 2, outputTokens: 3, reasoningTokens: 1, cachedReadTokens: 0)
+
+        state.restoreDurableTranscript(
+            messages: [AgentMessage(role: .user, content: "Hi")],
+            toolResults: ["tool-1": toolResult],
+            usage: usage,
+            toolCalls: [toolCall],
+            commands: [command],
+            commandOutput: ["cmd-1": "dirty\n"],
+            commandResults: ["cmd-1": commandResult],
+            fileChanges: [file],
+            reasoningBlocks: ["Thinking"]
+        )
+
+        #expect(state.messages.map(\.content) == ["Hi"])
+        #expect(state.toolCalls == [
+            AgentToolCall(
+                id: "tool-1",
+                title: "Read file",
+                kind: "read",
+                status: .completed,
+                input: "README.md"
+            )
+        ])
+        #expect(state.toolResults["tool-1"] == toolResult)
+        #expect(state.commands == [
+            AgentCommand(id: "cmd-1", command: "git status", status: .failed)
+        ])
+        #expect(state.commandOutput["cmd-1"] == "dirty\n")
+        #expect(state.commandResults["cmd-1"] == commandResult)
+        #expect(state.fileChanges == [file])
+        #expect(state.reasoningBlocks == ["Thinking"])
+        #expect(state.usage == usage)
+        #expect(state.reasoningDraft.isEmpty)
+        #expect(state.assistantDraft.isEmpty)
+        #expect(state.permissionRequest == nil)
+        #expect(!state.isRunning)
+    }
+
     @Test("session permission error and close lifecycle is explicit")
     func lifecycleEvents() {
         var state = AgentConversationState()
@@ -122,6 +179,9 @@ struct AgentConversationStateTests {
 
         state.apply(.permissionRequested(permission))
         #expect(state.permissionRequest == permission)
+        #expect(state.permissionCoordinator.pending.map(\.id) == ["permission-1"])
+        #expect(state.permissionCoordinator.presented?.backendID == .claudeCode)
+        #expect(state.permissionCoordinator.presented?.sessionID == "session-1")
 
         state.apply(.error(recoverable))
         #expect(state.error == recoverable)
@@ -130,5 +190,54 @@ struct AgentConversationStateTests {
         #expect(state.isClosed)
         #expect(!state.isRunning)
         #expect(state.permissionRequest == nil)
+        #expect(state.permissionCoordinator.pending.isEmpty)
+    }
+
+    @Test("Hermes permissionRequested enqueues hermes-mapped coordinator record")
+    func hermesPermissionRequestedEnqueuesMappedRecord() {
+        var state = AgentConversationState()
+        let session = AgentSession(id: "hermes-sess", backendID: .hermes, workingDirectory: nil)
+        let permission = AgentPermissionRequest(
+            id: "42",
+            title: "run: ls",
+            detail: "execute",
+            options: [
+                AgentPermissionOption(id: "allow_once", title: "Allow once"),
+                AgentPermissionOption(id: "deny", title: "Deny"),
+            ]
+        )
+
+        state.apply(.sessionStarted(session))
+        state.apply(.permissionRequested(permission))
+
+        #expect(state.permissionRequest == permission)
+        let presented = state.permissionCoordinator.presented
+        #expect(presented?.id == "42")
+        #expect(presented?.backendID == .hermes)
+        #expect(presented?.sessionID == "hermes-sess")
+        #expect(presented?.asAgentPermissionRequest == permission)
+        #expect(Int(presented?.id ?? "") == 42)
+
+        let answered = state.answerPermission(id: "42", optionID: "allow_once")
+        #expect(answered)
+        #expect(state.permissionRequest == nil)
+        #expect(state.permissionCoordinator.pending.isEmpty)
+        #expect(state.permissionCoordinator.records.first?.status == .answered)
+    }
+
+    @Test("availableCommandsUpdated stores live ACP descriptors and clears on sessionClosed")
+    func availableCommandsUpdatedStoresLiveDescriptors() {
+        var state = AgentConversationState()
+        let commands = AgentSlashCommandACPDiscovery.descriptors(fromACPCommands: [
+            ["name": "help", "description": "List commands"],
+            ["name": "version", "description": "Show version"],
+        ])
+
+        state.apply(.availableCommandsUpdated(commands))
+        #expect(state.discoveredSlashCommands.map(\.name) == ["help", "version"])
+        #expect(state.discoveredSlashCommands[0].description == "List commands")
+
+        state.apply(.sessionClosed)
+        #expect(state.discoveredSlashCommands.isEmpty)
     }
 }

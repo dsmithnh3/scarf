@@ -10,20 +10,35 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     typealias ExecutableResolver = @Sendable () -> String?
     typealias InstallationProbe = @Sendable (String) async -> AgentInstallationStatus
     typealias EnvironmentProvider = @Sendable () -> [String: String]
+    typealias AuthStatusProbe = @Sendable (_ executable: String, _ environment: [String: String]) async -> AgentAuthHealth
+    typealias ChannelFactory = @Sendable (
+        _ command: ClaudeProcessCommand,
+        _ environment: [String: String]
+    ) async throws -> any ACPChannel
 
     private struct Runtime {
         let manager: ClaudeProcessManager
         let decoder: ClaudeStreamDecoder
         let incomingTask: Task<Void, Never>
         let stderrTask: Task<Void, Never>
+        var initializeRequestID: String?
+    }
+
+    private struct PendingPermission: Sendable {
+        let sessionID: String
+        let inputJSON: String
     }
 
     nonisolated let id: AgentID = .claudeCode
     nonisolated let displayName = "Claude Code"
+    /// `.permissions` is advertised only with host-prompting launch
+    /// (`--permission-mode default` + `--permission-prompt-tool stdio`) and
+    /// a verified can_use_tool receive/answer round trip.
     nonisolated let capabilities: AgentCapabilities = [
         .streaming,
         .reasoning,
         .toolCalls,
+        .permissions,
         .sessions,
         .resume,
         .mcp,
@@ -37,9 +52,17 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     private let executableResolver: ExecutableResolver
     private let installationProbe: InstallationProbe
     private let environmentProvider: EnvironmentProvider
+    private let authStatusProbe: AuthStatusProbe
+    private let channelFactory: ChannelFactory?
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var runtimes: [String: Runtime] = [:]
+    private var pendingPermissions: [String: PendingPermission] = [:]
+    /// Last initialize `models` list. Empty until a fixture-shaped success payload arrives.
+    private var discoveredModels: [AgentModel] = []
+    /// Last initialize `agents` mapped to Claude skill descriptors. Empty until
+    /// a fixture-shaped success payload arrives. Static catalog stub stays [].
+    private var discoveredSkillExtensions: [AgentExtensionDescriptor] = []
 
     init(
         executableResolver: @escaping ExecutableResolver = {
@@ -49,11 +72,15 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         installationProbe: @escaping InstallationProbe = ClaudeCodeBackend.defaultInstallationProbe,
         environmentProvider: @escaping EnvironmentProvider = {
             HermesFileService.enrichedEnvironment()
-        }
+        },
+        authStatusProbe: @escaping AuthStatusProbe = ClaudeAuthStatusProbe.run,
+        channelFactory: ChannelFactory? = nil
     ) {
         self.executableResolver = executableResolver
         self.installationProbe = installationProbe
         self.environmentProvider = environmentProvider
+        self.authStatusProbe = authStatusProbe
+        self.channelFactory = channelFactory
 
         var continuation: AsyncStream<AgentEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
@@ -69,11 +96,22 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         return await installationProbe(executable)
     }
 
+    nonisolated func resolvedExecutablePath() -> String? {
+        executableResolver()
+    }
+
+    nonisolated func authHealth() async -> AgentAuthHealth {
+        guard let executable = executableResolver() else { return .notProbed }
+        let environment = ClaudeProcessEnvironment.sanitized(environmentProvider())
+        return await authStatusProbe(executable, environment)
+    }
+
     nonisolated func models() async throws -> [AgentModel] {
-        // Claude model aliases evolve independently of Scarf. Model discovery
-        // will move to the control initialize response rather than hard-coding
-        // a list that can go stale.
-        []
+        await discoveredModels
+    }
+
+    nonisolated func discoveredExtensions() async -> [AgentExtensionDescriptor] {
+        await discoveredSkillExtensions
     }
 
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
@@ -127,6 +165,14 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         return session
     }
 
+    /// Claude `--resume` restarts the process; Scarf has no verified
+    /// structured transcript/history API yet. Returning `[]` avoids inventing
+    /// session-file parsers and keeps restore reconcile Scarf-preferring.
+    /// Do not advertise a history capability.
+    func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
+        []
+    }
+
     func send(_ message: AgentMessage, in session: AgentSession) async throws {
         guard message.role == .user else {
             throw AgentError(
@@ -148,20 +194,55 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         optionID: String,
         in session: AgentSession
     ) async throws {
-        throw AgentError(
-            code: "claude.permissions-not-implemented",
-            message: "Claude Code host permission responses are not enabled yet"
+        guard let runtime = runtimes[session.id] else {
+            throw AgentError(
+                code: "claude.session-not-active",
+                message: "Claude Code session is not active"
+            )
+        }
+
+        let decision: ClaudePermissionDecision
+        switch optionID {
+        case "allow":
+            // Echo the original tool input when we still have it; Claude accepts
+            // allow without `updatedInput` as well.
+            decision = .allow(updatedInputJSON: pendingPermissions[request.id]?.inputJSON)
+        case "deny":
+            decision = .deny(message: "Denied by user")
+        default:
+            throw AgentError(
+                code: "claude.invalid-permission-option",
+                message: "Claude Code permission option must be allow or deny"
+            )
+        }
+
+        let line = try ClaudeControlProtocol.encodePermissionResponse(
+            requestID: request.id,
+            decision: decision
         )
+        try await runtime.manager.sendRecord(line)
+        pendingPermissions.removeValue(forKey: request.id)
     }
 
     func cancelPermission(
         _ request: AgentPermissionRequest,
         in session: AgentSession
     ) async throws {
-        throw AgentError(
-            code: "claude.permissions-not-implemented",
-            message: "Claude Code host permission responses are not enabled yet"
+        guard let runtime = runtimes[session.id] else {
+            throw AgentError(
+                code: "claude.session-not-active",
+                message: "Claude Code session is not active"
+            )
+        }
+
+        // Claude's verified can_use_tool wire only defines allow/deny behaviors;
+        // host cancel maps to deny so the process is not left waiting.
+        let line = try ClaudeControlProtocol.encodePermissionResponse(
+            requestID: request.id,
+            decision: .deny(message: "Cancelled by user")
         )
+        try await runtime.manager.sendRecord(line)
+        pendingPermissions.removeValue(forKey: request.id)
     }
 
     func cancel(session: AgentSession) async {
@@ -179,6 +260,7 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
 
     func close(session: AgentSession) async {
         guard let runtime = runtimes.removeValue(forKey: session.id) else { return }
+        pendingPermissions = pendingPermissions.filter { $0.value.sessionID != session.id }
         runtime.incomingTask.cancel()
         runtime.stderrTask.cancel()
         await runtime.manager.close()
@@ -192,6 +274,7 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
         resume: Bool
     ) async throws {
         if let existing = runtimes.removeValue(forKey: session.id) {
+            pendingPermissions = pendingPermissions.filter { $0.value.sessionID != session.id }
             existing.incomingTask.cancel()
             existing.stderrTask.cancel()
             await existing.manager.close()
@@ -207,7 +290,19 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
             resume: resume
         )
         let command = ClaudeProcessConfiguration.command(for: launch)
-        let manager = ClaudeProcessManager(environmentProvider: environmentProvider)
+        let baseEnvironment = environmentProvider
+        let sanitizedEnvironment: EnvironmentProvider = {
+            ClaudeProcessEnvironment.sanitized(baseEnvironment())
+        }
+        let manager: ClaudeProcessManager
+        if let channelFactory {
+            manager = ClaudeProcessManager(
+                channelFactory: channelFactory,
+                environmentProvider: sanitizedEnvironment
+            )
+        } else {
+            manager = ClaudeProcessManager(environmentProvider: sanitizedEnvironment)
+        }
         let decoder = ClaudeStreamDecoder()
         let streams = try await manager.start(command: command)
 
@@ -220,12 +315,25 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
             await self.drainStderr(streams.stderr, sessionID: session.id)
         }
 
+        let initializeRequestID = ClaudeControlProtocol.makeRequestID()
         runtimes[session.id] = Runtime(
             manager: manager,
             decoder: decoder,
             incomingTask: incomingTask,
-            stderrTask: stderrTask
+            stderrTask: stderrTask,
+            initializeRequestID: initializeRequestID
         )
+        do {
+            try await manager.sendRecord(
+                ClaudeControlProtocol.encodeInitialize(requestID: initializeRequestID)
+            )
+        } catch {
+            runtimes[session.id] = nil
+            incomingTask.cancel()
+            stderrTask.cancel()
+            await manager.close()
+            throw error
+        }
     }
 
     private func consumeIncoming(
@@ -239,7 +347,26 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
 
                 do {
                     if let control = try ClaudeControlProtocol.decodeResponse(line) {
-                        if !control.isSuccess {
+                        let isInitialize = control.isSuccess
+                            && control.requestID == runtimes[sessionID]?.initializeRequestID
+                        if isInitialize, let result = try ClaudeControlProtocol.decodeInitializeResult(line) {
+                            let models = result.models.map {
+                                AgentModel(id: $0.value, displayName: $0.displayName)
+                            }
+                            let commands = AgentSlashCommandCatalogs.claudeCodeCommands(
+                                from: result.commands.map {
+                                    AgentSlashCommandCatalogs.ClaudeDiscoveredCommand(
+                                        name: $0.name,
+                                        description: $0.description,
+                                        argumentHint: $0.argumentHint,
+                                        aliases: $0.aliases
+                                    )
+                                }
+                            )
+                            discoveredModels = models
+                            discoveredSkillExtensions = Self.skillDescriptors(from: result.agents)
+                            yield(.availableCommandsUpdated(commands), sessionID: sessionID)
+                        } else if !control.isSuccess {
                             yield(.error(AgentError(
                                 code: "claude.control-response-error",
                                 message: control.errorMessage ?? "Claude Code rejected a control request",
@@ -249,9 +376,24 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
                         continue
                     }
 
+                    if let permission = try ClaudeControlProtocol.decodePermissionRequest(line) {
+                        pendingPermissions[permission.requestID] = PendingPermission(
+                            sessionID: sessionID,
+                            inputJSON: permission.inputJSON
+                        )
+                        yield(
+                            .permissionRequested(Self.permissionRequest(from: permission)),
+                            sessionID: sessionID
+                        )
+                        continue
+                    }
+
                     let mapped = try await decoder.decode(line: line)
                     for event in mapped {
-                        yield(event, sessionID: sessionID)
+                        yield(
+                            Self.alignedEvent(event, runtimeSessionID: sessionID),
+                            sessionID: sessionID
+                        )
                     }
                 } catch let error as ClaudeStreamDecoderError {
                     yield(.error(AgentError(
@@ -317,6 +459,64 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     private func yield(_ event: AgentEvent, sessionID: String) {
         eventContinuation.yield(event)
         sessionEventContinuation.yield(AgentBackendEvent(sessionID: sessionID, event: event))
+    }
+
+    /// Normalize a decoded Claude `can_use_tool` control request into the
+    /// generic permission event shape used by the conversation coordinator.
+    nonisolated static func permissionRequest(
+        from permission: ClaudePermissionControlRequest
+    ) -> AgentPermissionRequest {
+        AgentPermissionRequest(
+            id: permission.requestID,
+            title: permission.toolName,
+            detail: "can_use_tool",
+            options: [
+                AgentPermissionOption(id: "allow", title: "Allow"),
+                AgentPermissionOption(id: "deny", title: "Deny"),
+            ]
+        )
+    }
+
+    /// Keep Scarf's runtime session id as the routing key even when Claude's
+    /// system init reports a different `session_id`. Divergent ids are retained
+    /// in metadata for diagnostics without orphaning later scoped events.
+    nonisolated private static func alignedEvent(
+        _ event: AgentEvent,
+        runtimeSessionID: String
+    ) -> AgentEvent {
+        guard case .sessionStarted(let reported) = event else { return event }
+        guard reported.id != runtimeSessionID else { return event }
+
+        var metadata = reported.metadata
+        metadata["claudeReportedSessionID"] = reported.id
+        return .sessionStarted(AgentSession(
+            id: runtimeSessionID,
+            backendID: reported.backendID,
+            workingDirectory: reported.workingDirectory,
+            metadata: metadata
+        ))
+    }
+
+    /// Map initialize agents (CLI 2.1.289: name / description / model) into
+    /// Claude skill catalog rows. Does not scrape disk; empty input → [].
+    nonisolated static func skillDescriptors(
+        from agents: [ClaudeInitializeAgent]
+    ) -> [AgentExtensionDescriptor] {
+        agents.map { agent in
+            var description = agent.description
+            if let model = agent.model, !model.isEmpty {
+                let suffix = "model: \(model)"
+                description = description.isEmpty ? suffix : "\(description) (\(suffix))"
+            }
+            return AgentExtensionDescriptor(
+                name: agent.name,
+                description: description,
+                kind: .claudeCodeSkill,
+                source: .claudeCode,
+                backendScope: .backends([.claudeCode]),
+                availability: .available
+            )
+        }
     }
 
     nonisolated private static func defaultInstallationProbe(

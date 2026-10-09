@@ -7,7 +7,29 @@ import ScarfCore
 /// replacing it. Existing Hermes-only services (memory, cron, gateway, proxy,
 /// configuration, etc.) remain owned by their current implementations.
 actor HermesBackend: SessionScopedAgentBackend {
+    typealias ExecutableResolver = @Sendable () -> String?
     typealias InstallationProbe = @Sendable () async -> AgentInstallationStatus
+    /// Same verdict as chat's credential preflight (`HermesFileService.hasAnyAICredential`).
+    typealias CredentialProbe = @Sendable () -> Bool
+    typealias ConversationHistoryLoader = @Sendable (ServerContext, String) async throws -> [AgentMessage]
+    /// Configured `model.provider` from Hermes config. Nil / empty / `unknown`
+    /// means models() returns [].
+    typealias ConfiguredProviderResolver = @Sendable () -> String?
+    /// models.dev / overlay catalog rows for one provider id.
+    typealias CatalogModelsLoader = @Sendable (String) async -> [AgentModel]
+    /// Nous Portal rows already mapped into ``AgentModel`` (`nous:<id>`).
+    typealias NousModelsLoader = @Sendable () async -> [AgentModel]
+    /// Test seam for ACP `session/set_model` without a live client.
+    typealias SessionModelApplier = @Sendable (
+        _ sessionID: String,
+        _ modelID: String,
+        _ providerID: String?
+    ) async throws -> Void
+    /// Test seam for ACP `session/set_mode` without a live client.
+    typealias SessionModeApplier = @Sendable (
+        _ sessionID: String,
+        _ modeID: String
+    ) async throws -> Void
 
     nonisolated let id: AgentID = .hermes
     nonisolated let displayName = "Hermes"
@@ -32,7 +54,15 @@ actor HermesBackend: SessionScopedAgentBackend {
     nonisolated let sessionEvents: AsyncStream<AgentBackendEvent>
 
     private let context: ServerContext
+    private let executableResolver: ExecutableResolver
     private let installationProbe: InstallationProbe
+    private let credentialProbe: CredentialProbe
+    private let conversationHistoryLoader: ConversationHistoryLoader
+    private let configuredProviderResolver: ConfiguredProviderResolver
+    private let catalogModelsLoader: CatalogModelsLoader
+    private let nousModelsLoader: NousModelsLoader
+    private let sessionModelApplier: SessionModelApplier?
+    private let sessionModeApplier: SessionModeApplier?
     private let eventContinuation: AsyncStream<AgentEvent>.Continuation
     private let sessionEventContinuation: AsyncStream<AgentBackendEvent>.Continuation
     private var clients: [String: ACPClient] = [:]
@@ -40,9 +70,18 @@ actor HermesBackend: SessionScopedAgentBackend {
 
     init(
         context: ServerContext = .local,
-        installationProbe: InstallationProbe? = nil
+        executableResolver: ExecutableResolver? = nil,
+        installationProbe: InstallationProbe? = nil,
+        credentialProbe: CredentialProbe? = nil,
+        conversationHistoryLoader: ConversationHistoryLoader? = nil,
+        configuredProviderResolver: ConfiguredProviderResolver? = nil,
+        catalogModelsLoader: CatalogModelsLoader? = nil,
+        nousModelsLoader: NousModelsLoader? = nil,
+        sessionModelApplier: SessionModelApplier? = nil,
+        sessionModeApplier: SessionModeApplier? = nil
     ) {
         self.context = context
+        self.conversationHistoryLoader = conversationHistoryLoader ?? Self.defaultConversationHistoryLoader
 
         var continuation: AsyncStream<AgentEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
@@ -52,20 +91,96 @@ actor HermesBackend: SessionScopedAgentBackend {
         self.sessionEvents = AsyncStream { sessionContinuation = $0 }
         self.sessionEventContinuation = sessionContinuation
 
+        let resolver = executableResolver ?? Self.makeExecutableResolver(context: context)
+        self.executableResolver = resolver
+
         if let installationProbe {
             self.installationProbe = installationProbe
         } else {
-            self.installationProbe = Self.makeInstallationProbe(context: context)
+            self.installationProbe = Self.makeInstallationProbe(
+                context: context,
+                executableResolver: resolver
+            )
+        }
+
+        // Reuse the verified chat preflight — env / .env / auth.json / config —
+        // rather than inventing a second credential detector or OAuth UI.
+        self.credentialProbe = credentialProbe ?? {
+            HermesFileService(context: context).hasAnyAICredential()
+        }
+
+        self.configuredProviderResolver = configuredProviderResolver
+            ?? Self.makeConfiguredProviderResolver(context: context)
+        self.catalogModelsLoader = catalogModelsLoader
+            ?? Self.makeCatalogModelsLoader(context: context)
+        self.nousModelsLoader = nousModelsLoader
+            ?? Self.makeNousModelsLoader(context: context)
+        self.sessionModelApplier = sessionModelApplier
+        self.sessionModeApplier = sessionModeApplier
+    }
+
+    nonisolated private static func makeExecutableResolver(
+        context: ServerContext
+    ) -> ExecutableResolver {
+        {
+            context.paths.hermesBinaryIfInstalled
+        }
+    }
+
+    nonisolated private static func makeConfiguredProviderResolver(
+        context: ServerContext
+    ) -> ConfiguredProviderResolver {
+        {
+            guard let yaml = HermesConfigReader.readRawConfig(context: context) else {
+                return nil
+            }
+            let provider = HermesConfig(yaml: yaml).provider
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !provider.isEmpty, provider.lowercased() != "unknown" else {
+                return nil
+            }
+            return provider
+        }
+    }
+
+    nonisolated private static func makeCatalogModelsLoader(
+        context: ServerContext
+    ) -> CatalogModelsLoader {
+        { provider in
+            ModelCatalogService(context: context)
+                .loadModels(for: provider)
+                .map { AgentModel(id: $0.id, displayName: $0.modelName) }
+        }
+    }
+
+    nonisolated private static func makeNousModelsLoader(
+        context: ServerContext
+    ) -> NousModelsLoader {
+        {
+            let result = await NousModelCatalogService(context: context)
+                .loadModels(forceRefresh: false)
+            let models: [NousModel]
+            switch result {
+            case .fresh(let list, _), .cache(let list, _, _), .fallback(let list, _):
+                models = list
+            }
+            return NousModelCatalogService.agenticModels(models).map {
+                AgentModel(id: "nous:\($0.id)", displayName: $0.id)
+            }
         }
     }
 
     nonisolated private static func makeInstallationProbe(
-        context: ServerContext
+        context: ServerContext,
+        executableResolver: @escaping ExecutableResolver
     ) -> InstallationProbe {
         {
+            guard let executable = executableResolver() else {
+                return .notInstalled
+            }
             do {
                 let result = try await context.makeTransport().asyncRunProcess(
-                    executable: context.paths.hermesBinary,
+                    executable: executable,
                     args: ["--version"],
                     stdin: nil,
                     timeout: 10
@@ -86,11 +201,26 @@ actor HermesBackend: SessionScopedAgentBackend {
         await installationProbe()
     }
 
+    nonisolated func resolvedExecutablePath() -> String? {
+        executableResolver()
+    }
+
+    nonisolated func authHealth() async -> AgentAuthHealth {
+        credentialProbe() ? .credentialsDetected : .noCredentialsDetected
+    }
+
     nonisolated func models() async throws -> [AgentModel] {
-        // Hermes's existing model/catalog UI remains authoritative during the
-        // first migration phase. The generic catalog can be wired later without
-        // changing chat/session behavior.
-        []
+        // Thin bridge over the Rich Chat catalogs for the configured
+        // `model.provider` only. Do not invent a parallel list; Claude models
+        // stay on control initialize.
+        guard let raw = configuredProviderResolver() else { return [] }
+        let provider = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !provider.isEmpty, provider.lowercased() != "unknown" else { return [] }
+
+        if provider.lowercased() == "nous" {
+            return await nousModelsLoader()
+        }
+        return await catalogModelsLoader(provider)
     }
 
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession {
@@ -132,6 +262,69 @@ actor HermesBackend: SessionScopedAgentBackend {
         )
         yield(.sessionStarted(resumed), sessionID: loadedID)
         return resumed
+    }
+
+    /// Structured history from read-only Hermes `state.db` rows (same SQL path
+    /// as Rich Chat). ACP `session/load` streaming replay is unchanged. Do not
+    /// advertise a history capability until end-to-end restore matching is
+    /// product-approved (Hermes row ids ≠ Scarf UUIDs).
+    func fetchConversationHistory(for session: AgentSession) async throws -> [AgentMessage] {
+        guard session.backendID == .hermes else {
+            throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
+        }
+        return try await conversationHistoryLoader(context, session.id)
+    }
+
+    /// Live ACP `session/set_model` on an active Hermes session.
+    ///
+    /// Does not restart the process. Callers must pass provider/model already
+    /// split via ``AgentModelPickerID/split(_:)`` — never the raw picker id as
+    /// `modelID` alone when a provider prefix is present.
+    func setSessionModel(
+        session: AgentSession,
+        modelID: String,
+        providerID: String?
+    ) async throws {
+        guard session.backendID == .hermes else {
+            throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
+        }
+        if let sessionModelApplier {
+            try await sessionModelApplier(session.id, modelID, providerID)
+            return
+        }
+        guard let client = clients[session.id] else {
+            throw AgentError(code: "hermes.session-not-active", message: "Hermes session is not active")
+        }
+        try await client.setSessionModel(
+            sessionId: session.id,
+            modelID: modelID,
+            providerID: providerID
+        )
+    }
+
+    /// Live ACP `session/set_mode` on an active Hermes session (v0.15+).
+    func setSessionMode(
+        session: AgentSession,
+        modeID: String
+    ) async throws {
+        guard session.backendID == .hermes else {
+            throw AgentError(code: "hermes.invalid-backend", message: "Session does not belong to Hermes")
+        }
+        if let sessionModeApplier {
+            try await sessionModeApplier(session.id, modeID)
+            return
+        }
+        guard let client = clients[session.id] else {
+            throw AgentError(code: "hermes.session-not-active", message: "Hermes session is not active")
+        }
+        try await client.setSessionMode(sessionId: session.id, modeId: modeID)
+    }
+
+    nonisolated private static func defaultConversationHistoryLoader(
+        context: ServerContext,
+        sessionID: String
+    ) async throws -> [AgentMessage] {
+        try await HermesAgentConversationHistory.fetchMessages(sessionID: sessionID, context: context)
     }
 
     func send(_ message: AgentMessage, in session: AgentSession) async throws {

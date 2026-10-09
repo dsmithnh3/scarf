@@ -36,10 +36,12 @@ enum ClaudeProcessConfiguration {
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
-            // Until Scarf implements Claude's host-side can_use_tool bridge,
-            // unresolved permission requests must be rejected instead of
-            // hanging in a non-interactive process or bypassing safeguards.
-            "--permission-mode", "dontAsk",
+            // Verified host-prompting launch (Agent SDK canUseTool path):
+            // `--permission-mode default` emits prompts; `dontAsk` never does.
+            // `--permission-prompt-tool stdio` routes them over stream-json
+            // control_request / can_use_tool (same flags the Agent SDK pushes).
+            "--permission-mode", "default",
+            "--permission-prompt-tool", "stdio",
         ]
 
         if configuration.resume {

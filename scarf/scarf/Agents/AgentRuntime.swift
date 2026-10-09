@@ -5,10 +5,61 @@ import ScarfCore
 ///
 /// This deliberately carries no selection or mutation API. Exposing backend
 /// health in Settings must not change the backend used by existing Hermes chat.
+/// `executablePath` is the discovered CLI path when known; `nil` means not
+/// found (never a guessed fallback). `authHealth` is only non-`.notProbed`
+/// when a verified credential probe exists (Hermes today).
 struct AgentBackendStatusSnapshot: Identifiable, Equatable, Sendable {
     let id: AgentID
     let displayName: String
+    let executablePath: String?
     let status: AgentInstallationStatus
+    let authHealth: AgentAuthHealth
+
+    init(
+        id: AgentID,
+        displayName: String,
+        executablePath: String?,
+        status: AgentInstallationStatus,
+        authHealth: AgentAuthHealth = .notProbed
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.executablePath = executablePath
+        self.status = status
+        self.authHealth = authHealth
+    }
+}
+
+/// Shared formatting for provider diagnostics detail lines (Settings + tests).
+enum AgentBackendStatusFormatting {
+    static func detailText(for snapshot: AgentBackendStatusSnapshot) -> String {
+        let base: String
+        switch snapshot.status {
+        case .available(let version):
+            var parts: [String] = []
+            if let version, !version.isEmpty {
+                parts.append(version)
+            }
+            if let path = snapshot.executablePath, !path.isEmpty {
+                parts.append(path)
+            }
+            if parts.isEmpty {
+                base = snapshot.id == .hermes ? "Hermes runtime detected" : "Runtime detected"
+            } else {
+                base = parts.joined(separator: " · ")
+            }
+        case .notInstalled:
+            base = snapshot.id == .claudeCode
+                ? "Claude Code executable was not found"
+                : "Runtime executable was not found"
+        case .unavailable(let reason):
+            base = reason
+        }
+        return AgentAuthHealthFormatting.appendingDetailSuffix(
+            to: base,
+            health: snapshot.authHealth
+        )
+    }
 }
 
 /// Per-window/profile composition root for agent backends.
@@ -64,7 +115,9 @@ actor AgentRuntime {
                 AgentBackendStatusSnapshot(
                     id: backend.id,
                     displayName: backend.displayName,
-                    status: await backend.installationStatus()
+                    executablePath: backend.resolvedExecutablePath(),
+                    status: await backend.installationStatus(),
+                    authHealth: await backend.authHealth()
                 )
             )
         }
@@ -86,11 +139,19 @@ actor AgentRuntime {
     /// This is intentionally a factory rather than a global controller: each
     /// chat owns its own session lifecycle/state while sharing the context-bound
     /// coordinator and registered backend processes.
+    ///
+    /// Controllers are wired to ``AgentConversationIdentityStore`` at
+    /// `HermesPathSet.agentConversationIdentities` so start/resume persist and
+    /// relaunch can restore without inventing a second conversation state.
     func conversationController(for project: ScarfProject) async -> AgentConversationController? {
         await configureIfNeeded()
         guard await coordinator.backend(for: project.preferredAgentID) != nil else {
             return nil
         }
-        return AgentConversationController(coordinator: coordinator)
+        return AgentConversationController.makePersisting(
+            coordinator: coordinator,
+            conversationID: project.id.uuidString,
+            hermesHome: context.paths.home
+        )
     }
 }
