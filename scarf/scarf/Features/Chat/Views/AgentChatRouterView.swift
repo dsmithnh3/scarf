@@ -506,13 +506,29 @@ private struct AgentMessageRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(roleLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text(roleLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if showsSpeakButton {
+                    SpeakMessageButton(
+                        messageId: message.id.speechPlaybackMessageId,
+                        content: message.content
+                    )
+                }
+                Spacer(minLength: 0)
+            }
             Text(message.content)
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Per-message TTS (parity with `RichMessageBubble`): settled assistant
+    /// replies with non-empty content. Uses the shared `MessageSpeechService`
+    /// path — system voice always; Hermes Voice when Settings + capabilities allow.
+    private var showsSpeakButton: Bool {
+        message.role == .assistant && !message.content.isEmpty
     }
 
     private var roleLabel: String {

@@ -702,68 +702,6 @@ struct RichMessageBubble: View, Equatable {
     }
 }
 
-/// Stand-alone speaker button so the `MessageSpeechService`
-/// observation doesn't get short-circuited by `RichMessageBubble`'s
-/// `Equatable`. Only the button re-renders when playback flips —
-/// the bubble itself stays optimised.
-///
-/// The message's server comes from the environment the bubble renders
-/// in — the window's profile-scoped `\.serverContext`, or the bot's own
-/// context inside `BotConversationView` — and travels with every toggle,
-/// so Hermes Voice synthesizes on the server the message came from and
-/// nowhere else.
-private struct SpeakMessageButton: View {
-    let messageId: Int
-    let content: String
-
-    @State private var speech = MessageSpeechService.shared
-    @State private var liveVoice = VoiceLiveSessionRegistry.shared
-    @Environment(\.serverContext) private var serverContext
-    @Environment(\.hermesCapabilities) private var capabilitiesStore
-
-    var body: some View {
-        let id = MessageSpeechService.PlaybackID(server: serverContext, messageId: messageId)
-        let state = SpeakMessageButtonState(
-            isPlaying: speech.isPlaying(id),
-            isLoading: speech.loading == id,
-            liveVoiceActive: liveVoice.isAnySessionActive,
-            fallbackReason: speech.fallbackNotice?.id == id ? speech.fallbackNotice?.reason : nil
-        )
-        HStack(spacing: 2) {
-            Button {
-                speech.toggle(id, content: content, capabilities: capabilitiesStore?.capabilities ?? .empty)
-            } label: {
-                Group {
-                    if state.isLoading {
-                        // Hermes Voice is synthesizing (can take seconds); the
-                        // button still stops it.
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: state.isPlaying ? "stop.circle.fill" : "speaker.wave.2")
-                            .font(.system(size: 11))
-                            .foregroundStyle(state.isPlaying ? ScarfColor.accent : ScarfColor.foregroundFaint)
-                    }
-                }
-                .frame(width: 14, height: 14)
-            }
-            .buttonStyle(.plain)
-            .disabled(!state.isEnabled)
-            .help(state.help)
-            .accessibilityLabel(state.accessibilityLabel)
-            .accessibilityValue(state.accessibilityValue)
-            if state.fallbackReason != nil, state.isPlaying {
-                // Hermes Voice failed and the system voice is reading
-                // instead: say so rather than switching voices silently.
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(ScarfColor.warning)
-                    .help(state.help)
-                    .accessibilityHidden(true)
-            }
-        }
-    }
-}
-
 /// What the message speaker button shows. Pure so the rules are tested:
 /// it stands down while Live Voice holds the speaker (starting a session
 /// already stops any reading), and it reports Hermes Voice's synthesis wait.
