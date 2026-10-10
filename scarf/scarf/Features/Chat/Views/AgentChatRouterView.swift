@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import ScarfCore
 import ScarfDesign
 
@@ -128,6 +129,8 @@ private struct AgentProjectChatView: View {
     @Bindable var viewModel: AgentChatViewModel
 
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(ChatViewModel.self) private var chatViewModel
+    @Environment(\.hermesCapabilities) private var capabilitiesStore
     @AppStorage(ChatDensityKeys.toolCardStyle)
     private var toolCardStyleRaw: String = ToolCardStyle.full.rawValue
     @AppStorage(ChatDensityKeys.reasoningStyle)
@@ -136,6 +139,9 @@ private struct AgentProjectChatView: View {
     private var chatFontScale: Double = ChatFontScale.default
     @State private var selectedSlashHintIndex = 0
     @State private var isExtensionsSheetPresented = false
+    @State private var attachmentSlots = ComposerAttachmentSlots()
+    @State private var attachmentError: String?
+    @State private var isImportingImages = false
 
     private var toolCardStyle: ToolCardStyle {
         ToolCardStyle(rawValue: toolCardStyleRaw) ?? .full
@@ -145,20 +151,77 @@ private struct AgentProjectChatView: View {
         ReasoningStyle(rawValue: reasoningStyleRaw) ?? .disclosure
     }
 
+    /// Hermes AgentChat can host the window `ChatViewModel` SwiftTerm.
+    /// Claude has no Hermes TUI path.
+    private var supportsTerminalMode: Bool {
+        project.preferredAgentID == .hermes
+    }
+
+    private var isTerminalMode: Bool {
+        supportsTerminalMode && chatViewModel.displayMode == .terminal
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            transcript
-            Divider()
-            composer
+            if isTerminalMode {
+                agentTerminalArea
+            } else {
+                ZStack {
+                    // Keep Hermes TTY alive when toggling back to AgentChat
+                    // (same pattern as ChatView.richChatArea).
+                    if supportsTerminalMode, let terminal = chatViewModel.terminalView {
+                        PersistentTerminalView(terminalView: terminal)
+                            .frame(width: 0, height: 0)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                    VStack(spacing: 0) {
+                        transcript
+                        Divider()
+                        composer
+                    }
+                }
+            }
         }
         .dynamicTypeSize(ChatFontScale.dynamicTypeSize(for: chatFontScale))
         .task(id: project.rootPath) {
+            viewModel.voiceChatModeRaw = chatViewModel.voiceChatModeRaw
             await startAndConsumeHandoff()
         }
+        .onChange(of: chatViewModel.voiceChatModeRaw) { _, mode in
+            viewModel.voiceChatModeRaw = mode
+        }
         .onDisappear {
+            viewModel.leaveVoiceLive()
             Task { await viewModel.close() }
+        }
+        .sheet(item: Binding(
+            get: { viewModel.voiceLive.pendingConsent },
+            set: { if $0 == nil { viewModel.voiceLive.declineConsent() } }
+        )) { recipient in
+            VoiceLiveConsentSheet(
+                recipient: recipient,
+                mode: .ask(
+                    onContinue: {
+                        viewModel.acceptVoiceLiveConsent(
+                            capabilities: capabilitiesStore?.capabilities ?? .empty
+                        )
+                    },
+                    onCancel: { viewModel.voiceLive.declineConsent() }
+                )
+            )
+        }
+        .onChange(of: chatViewModel.displayMode) { _, mode in
+            guard supportsTerminalMode else { return }
+            if mode == .terminal {
+                // Mutual exclusion: Terminal launch stops ACP on ChatViewModel;
+                // also tear down AgentChat's own controller session.
+                Task { await viewModel.close() }
+            } else if !viewModel.isStarted {
+                Task { await viewModel.start() }
+            }
         }
         .onChange(of: viewModel.slashHintPresentation.query) { _, _ in
             selectedSlashHintIndex = 0
@@ -180,9 +243,31 @@ private struct AgentProjectChatView: View {
         }
     }
 
+    @ViewBuilder
+    private var agentTerminalArea: some View {
+        if let terminal = chatViewModel.terminalView {
+            PersistentTerminalView(terminalView: terminal)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if chatViewModel.hermesBinaryExists {
+            ContentUnavailableView(
+                "No Active Session",
+                systemImage: "terminal",
+                description: Text("Start or continue a Hermes TTY session from the Session menu. Terminal mode stops the AgentChat ACP session for this window.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ContentUnavailableView(
+                "Hermes Not Found",
+                systemImage: "terminal",
+                description: Text("Expected at \(chatViewModel.context.paths.hermesBinary)")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
+            Image(systemName: isTerminalMode ? "terminal" : "point.3.connected.trianglepath.dotted")
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -197,7 +282,42 @@ private struct AgentProjectChatView: View {
 
             Spacer()
 
-            if viewModel.supportsModelPicker, !viewModel.availableModels.isEmpty {
+            if !viewModel.queuedPrompts.isEmpty {
+                ChatQueueIndicator(queuedPrompts: viewModel.queuedPrompts)
+            }
+
+            if supportsTerminalMode {
+                Picker("View", selection: Bindable(chatViewModel).displayMode) {
+                    Image(systemName: "terminal")
+                        .help("Terminal — Hermes TTY; stops AgentChat ACP for this window")
+                        .tag(ChatDisplayMode.terminal)
+                    Image(systemName: "bubble.left.and.text.bubble.right")
+                        .help("AgentChat")
+                        .tag(ChatDisplayMode.richChat)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .accessibilityLabel("Chat display mode")
+
+                if isTerminalMode {
+                    Menu {
+                        Button("New Terminal Session") {
+                            chatViewModel.startNewSession(projectPath: project.rootPath)
+                        }
+                        Button("Continue Last Session") {
+                            chatViewModel.continueLastSession()
+                        }
+                    } label: {
+                        Label("Session", systemImage: "play.circle")
+                            .font(.caption)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Hermes TTY session. Switching to Terminal stops the AgentChat ACP session.")
+                }
+            }
+
+            if !isTerminalMode, viewModel.supportsModelPicker, !viewModel.availableModels.isEmpty {
                 Menu {
                     ForEach(viewModel.availableModels) { model in
                         Button {
@@ -226,7 +346,7 @@ private struct AgentProjectChatView: View {
                 )
                 .help(viewModel.modelPickerHelp)
                 .accessibilityLabel("Model: \(viewModel.modelBadgeLabel ?? "default")")
-            } else if let modelLabel = viewModel.modelBadgeLabel {
+            } else if !isTerminalMode, let modelLabel = viewModel.modelBadgeLabel {
                 Text(modelLabel)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(ScarfColor.foregroundMuted)
@@ -235,7 +355,7 @@ private struct AgentProjectChatView: View {
                     .background(ScarfColor.backgroundSecondary, in: Capsule())
                     .help("Models advertised by this backend (read-only)")
                     .accessibilityLabel("Models: \(modelLabel)")
-            } else if viewModel.isLoadingModels {
+            } else if !isTerminalMode, viewModel.isLoadingModels {
                 ProgressView()
                     .controlSize(.mini)
             }
@@ -245,26 +365,28 @@ private struct AgentProjectChatView: View {
             // (rather than gated behind a live capability check) so the user
             // always has an explanation — `selectApprovalMode` itself is a
             // safe no-op on a host that can't honor it.
-            if project.preferredAgentID == .hermes, viewModel.isStarted {
+            if !isTerminalMode, project.preferredAgentID == .hermes, viewModel.isStarted {
                 ChatApprovalModeBadge(mode: viewModel.activeApprovalMode) { mode in
                     Task { await viewModel.selectApprovalMode(mode) }
                 }
             }
 
-            Button {
-                isExtensionsSheetPresented = true
-            } label: {
-                Label("Extensions", systemImage: "puzzlepiece.extension")
-            }
-            .buttonStyle(.bordered)
-            .disabled(viewModel.isLoadingExtensions)
-            .help("Browse this backend's extension catalog (read-only)")
+            if !isTerminalMode {
+                Button {
+                    isExtensionsSheetPresented = true
+                } label: {
+                    Label("Extensions", systemImage: "puzzlepiece.extension")
+                }
+                .buttonStyle(.bordered)
+                .disabled(viewModel.isLoadingExtensions)
+                .help("Browse this backend's extension catalog (read-only)")
 
-            if viewModel.state.isRunning {
-                ProgressView()
-                    .controlSize(.small)
-                Button("Stop") {
-                    Task { try? await viewModel.cancel() }
+                if viewModel.state.isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                    Button("Stop") {
+                        Task { try? await viewModel.cancel() }
+                    }
                 }
             }
         }
@@ -315,6 +437,10 @@ private struct AgentProjectChatView: View {
 
                 if let idleSlashNotice = viewModel.idleSlashNotice {
                     AgentInlineBanner(icon: "info.circle", title: nil, message: idleSlashNotice)
+                }
+
+                if let transientHint = viewModel.transientHint {
+                    AgentInlineBanner(icon: "info.circle", title: nil, message: transientHint)
                 }
 
                 if viewModel.isStarted,
@@ -390,8 +516,43 @@ private struct AgentProjectChatView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var voiceCapabilities: HermesCapabilities {
+        capabilitiesStore?.capabilities ?? .empty
+    }
+
+    private var voiceLiveEntry: VoiceLiveComposerEntry? {
+        guard project.preferredAgentID == .hermes else { return nil }
+        let availability = viewModel.voiceLiveAvailability(capabilities: voiceCapabilities)
+        guard let engineKind = availability.engineKind else { return nil }
+        return VoiceLiveComposerEntry(
+            engineKind: engineKind,
+            isActive: viewModel.voiceLive.engine != nil,
+            canStart: viewModel.canHostVoiceTurns,
+            blockedByAnotherWindow: VoiceLiveSessionRegistry.shared.isAnySessionActive
+                && viewModel.voiceLive.engine == nil,
+            onToggle: {
+                if viewModel.voiceLive.engine != nil {
+                    viewModel.leaveVoiceLive()
+                } else {
+                    viewModel.startVoiceLive(capabilities: voiceCapabilities)
+                }
+            }
+        )
+    }
+
     private var composer: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if viewModel.voiceLive.engine != nil || viewModel.voiceLive.startFailure != nil {
+                VoiceLivePanel(
+                    controller: viewModel.voiceLive,
+                    onRestart: { viewModel.startVoiceLive(capabilities: voiceCapabilities) },
+                    ttsProvider: chatViewModel.voiceTTSProviderRaw,
+                    canRestart: viewModel.canHostVoiceTurns
+                )
+                .padding(.horizontal, ScarfSpace.s3)
+                .padding(.top, ScarfSpace.s2)
+            }
+
             if let permission = viewModel.permissionPresentation {
                 AgentPermissionCard(
                     presentation: permission,
@@ -420,7 +581,32 @@ private struct AgentProjectChatView: View {
                 .padding(.top, ScarfSpace.s2)
             }
 
+            if viewModel.supportsImageAttachments,
+               !attachmentSlots.attachments.isEmpty || attachmentSlots.isEncoding || attachmentError != nil {
+                agentAttachmentStrip
+                    .padding(.horizontal, ScarfSpace.s3)
+                    .padding(.top, ScarfSpace.s2)
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
+                if viewModel.supportsImageAttachments {
+                    Button {
+                        isImportingImages = true
+                    } label: {
+                        Image(systemName: "photo.on.rectangle")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!viewModel.isStarted || attachmentSlots.isFull)
+                    .help("Attach image (\(attachmentSlots.attachments.count)/\(ComposerAttachmentSlots.defaultCapacity))")
+                    .fileImporter(
+                        isPresented: $isImportingImages,
+                        allowedContentTypes: [.image],
+                        allowsMultipleSelection: true
+                    ) { result in
+                        handleImageImport(result)
+                    }
+                }
+
                 TextField(
                     "Message \(backendDisplayName)…",
                     text: $viewModel.draft,
@@ -429,6 +615,11 @@ private struct AgentProjectChatView: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...6)
                 .onSubmit { submitComposer() }
+                .onDrop(of: [.image, .fileURL], isTargeted: nil) { providers in
+                    guard viewModel.supportsImageAttachments else { return false }
+                    ingestImageProviders(providers)
+                    return true
+                }
                 .onKeyPress(.upArrow, phases: .down) { _ in
                     guard viewModel.isSlashHintMenuVisible, !viewModel.slashHints.isEmpty else {
                         return .ignored
@@ -459,16 +650,60 @@ private struct AgentProjectChatView: View {
                     return .handled
                 }
 
+                if let voiceLiveEntry {
+                    VoiceLiveComposerButton(entry: voiceLiveEntry)
+                }
+
                 Button("Send") {
                     sendDraft()
                 }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(
-                    !viewModel.isStarted
-                        || viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                )
+                .disabled(!canSendComposer)
             }
             .padding(14)
+        }
+    }
+
+    private var canSendComposer: Bool {
+        guard viewModel.isStarted else { return false }
+        let hasText = !viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return hasText || !attachmentSlots.attachments.isEmpty
+    }
+
+    private var agentAttachmentStrip: some View {
+        HStack(spacing: 8) {
+            if attachmentSlots.isEncoding {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+            ForEach(attachmentSlots.attachments) { attachment in
+                HStack(spacing: 4) {
+                    Image(systemName: "photo")
+                        .font(.caption)
+                    Text(attachment.filename ?? "Image")
+                        .font(.caption2)
+                        .lineLimit(1)
+                    Button {
+                        attachmentSlots.remove(id: attachment.id)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.quaternary.opacity(0.4), in: Capsule())
+            }
+            if let attachmentError {
+                Text(attachmentError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+            Spacer(minLength: 0)
+            Text("\(attachmentSlots.attachments.count)/\(ComposerAttachmentSlots.defaultCapacity)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -512,7 +747,100 @@ private struct AgentProjectChatView: View {
 
     private func sendDraft() {
         guard viewModel.isStarted else { return }
-        Task { try? await viewModel.sendDraft() }
+        let images = attachmentSlots.drain()
+        Task { try? await viewModel.sendDraft(images: images) }
+    }
+
+    private func handleImageImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure:
+            attachmentError = "Couldn't open image"
+            scheduleAttachmentErrorClear()
+        case .success(let urls):
+            let granted = attachmentSlots.reserve(upTo: urls.count)
+            guard granted > 0 else {
+                attachmentError = "Limit of \(ComposerAttachmentSlots.defaultCapacity) images reached"
+                scheduleAttachmentErrorClear()
+                return
+            }
+            for url in urls.prefix(granted) {
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                guard let data = try? Data(contentsOf: url) else {
+                    attachmentSlots.release()
+                    continue
+                }
+                encodeAttachment(data: data, filename: url.lastPathComponent)
+            }
+        }
+    }
+
+    private func ingestImageProviders(_ providers: [NSItemProvider]) {
+        let granted = attachmentSlots.reserve(upTo: providers.count)
+        guard granted > 0 else {
+            attachmentError = "Limit of \(ComposerAttachmentSlots.defaultCapacity) images reached"
+            scheduleAttachmentErrorClear()
+            return
+        }
+        for provider in providers.prefix(granted) {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, let data = try? Data(contentsOf: url) else {
+                        Task { @MainActor in
+                            attachmentSlots.release()
+                            attachmentError = "Couldn't read dropped file"
+                            scheduleAttachmentErrorClear()
+                        }
+                        return
+                    }
+                    Task { @MainActor in
+                        encodeAttachment(data: data, filename: url.lastPathComponent)
+                    }
+                }
+                continue
+            }
+            if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                    guard let data else {
+                        Task { @MainActor in
+                            attachmentSlots.release()
+                        }
+                        return
+                    }
+                    Task { @MainActor in
+                        encodeAttachment(data: data, filename: nil)
+                    }
+                }
+                continue
+            }
+            attachmentSlots.release()
+        }
+    }
+
+    private func encodeAttachment(data: Data, filename: String?) {
+        Task {
+            do {
+                let attachment = try await Task.detached {
+                    try ImageEncoder().encode(rawBytes: data, sourceFilename: filename)
+                }.value
+                await MainActor.run {
+                    attachmentSlots.commit(attachment)
+                }
+            } catch {
+                await MainActor.run {
+                    attachmentSlots.release()
+                    attachmentError = "Couldn't encode image"
+                    scheduleAttachmentErrorClear()
+                }
+            }
+        }
+    }
+
+    private func scheduleAttachmentErrorClear() {
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await MainActor.run { attachmentError = nil }
+        }
     }
 }
 

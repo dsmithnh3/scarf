@@ -328,6 +328,15 @@ actor HermesBackend: SessionScopedAgentBackend {
     }
 
     func send(_ message: AgentMessage, in session: AgentSession) async throws {
+        try await send(message, images: [], contextNotes: [], in: session)
+    }
+
+    func send(
+        _ message: AgentMessage,
+        images: [ChatImageAttachment],
+        contextNotes: [ACPContextNote],
+        in session: AgentSession
+    ) async throws {
         guard message.role == .user else {
             throw AgentError(
                 code: "hermes.unsupported-message-role",
@@ -338,7 +347,12 @@ actor HermesBackend: SessionScopedAgentBackend {
             throw AgentError(code: "hermes.session-not-active", message: "Hermes session is not active")
         }
 
-        let response = try await client.sendPrompt(sessionId: session.id, text: message.content)
+        let response = try await client.sendPrompt(
+            sessionId: session.id,
+            text: message.content,
+            images: images,
+            contextNotes: contextNotes
+        )
         for event in HermesEventMapper.map(.promptComplete(sessionId: session.id, response: response)) {
             yield(event, sessionID: session.id)
         }

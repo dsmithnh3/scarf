@@ -50,6 +50,14 @@ public protocol AgentBackend: Sendable {
     func createSession(configuration: AgentSessionConfiguration) async throws -> AgentSession
     func resumeSession(_ session: AgentSession) async throws -> AgentSession
     func send(_ message: AgentMessage, in session: AgentSession) async throws
+    /// Send a user message with optional ACP image blocks and Live Voice
+    /// context notes. Default rejects non-empty images/notes (never silent drop).
+    func send(
+        _ message: AgentMessage,
+        images: [ChatImageAttachment],
+        contextNotes: [ACPContextNote],
+        in session: AgentSession
+    ) async throws
     func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws
     func cancelPermission(_ request: AgentPermissionRequest, in session: AgentSession) async throws
     func cancel(session: AgentSession) async
@@ -94,6 +102,32 @@ extension AgentBackend {
 
     /// Default: no live extension discovery.
     public func discoveredExtensions() async -> [AgentExtensionDescriptor] { [] }
+
+    /// Default: text-only. Non-empty images or context notes throw — never
+    /// silently dropped. Concrete backends that support ACP multimodal /
+    /// Live Voice notes override this.
+    public func send(
+        _ message: AgentMessage,
+        images: [ChatImageAttachment],
+        contextNotes: [ACPContextNote],
+        in session: AgentSession
+    ) async throws {
+        if !images.isEmpty {
+            throw AgentError(
+                code: "agent.images-unsupported",
+                message: "\(displayName) does not support image attachments",
+                isRecoverable: true
+            )
+        }
+        if !contextNotes.isEmpty {
+            throw AgentError(
+                code: "agent.context-notes-unsupported",
+                message: "\(displayName) does not support Live Voice context notes",
+                isRecoverable: true
+            )
+        }
+        try await send(message, in: session)
+    }
 
     /// Default: mid-session model changes are unsupported.
     public func setSessionModel(

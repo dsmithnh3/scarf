@@ -81,6 +81,8 @@ final class AgentChatViewModel {
     private(set) var state = AgentConversationState()
     private(set) var isStarted = false
     private(set) var startupError: String?
+    /// Mirrored from the controller after start/restore for sync VoiceTurnHost.
+    private(set) var activeSessionID: String?
 
     /// Per-session edit auto-approval mode. Hermes-only: `.default` on
     /// Claude (no menu is shown there). Flipped optimistically by
@@ -97,6 +99,16 @@ final class AgentChatViewModel {
     /// Cleared at the start of every `send(_:)`.
     private(set) var idleSlashNotice: String?
 
+    /// Short-lived composer/header hint (queue success, Live Voice refusal).
+    private(set) var transientHint: String?
+
+    /// Optimistic `/queue` mirror for the header chip (Hermes v0.13+).
+    private(set) var queuedPrompts: [HermesQueuedPrompt] = []
+
+    /// Whether the composer should offer image attachments (Hermes +
+    /// `hasACPImagePrompts`). Refreshed at start / capability load.
+    private(set) var supportsImageAttachments = false
+
     /// Claude-only restore notice: Claude returns no structured history, so
     /// Scarf durable transcript (or an empty chat) is what the user sees.
     /// Nil for Hermes and for Claude before the first successful start.
@@ -106,6 +118,22 @@ final class AgentChatViewModel {
     /// switch) for UI surfacing beyond ``AgentConversationState/error``,
     /// which only covers controller-originated failures.
     private(set) var lastActionError: String?
+
+    /// Live Voice session for this AgentChat surface (Hermes-only).
+    let voiceLive = VoiceLiveController()
+
+    /// Raw `voice.voice_chat_mode` from the window ChatViewModel / config.
+    /// Set by the view before starting Live Voice.
+    var voiceChatModeRaw: String?
+
+    @ObservationIgnored
+    private var wasAgentRunning = false
+    @ObservationIgnored
+    private var voiceTurnPrompts: [(id: String, prompt: String)] = []
+    @ObservationIgnored
+    private var busyVoiceRequestIDs: [String] = []
+    @ObservationIgnored
+    private var hintClearTask: Task<Void, Never>?
 
     /// Composer draft owned by the view model so slash-hint presentation can
     /// update with every keystroke without duplicating registry logic in SwiftUI.
@@ -273,6 +301,7 @@ final class AgentChatViewModel {
                 fallbackSessionIDs: fallbackSessionIDs
             )
             isStarted = true
+            activeSessionID = session.id
 
             if backendID == .hermes {
                 sessionAttributor(session.id, projectPath)
@@ -285,6 +314,13 @@ final class AgentChatViewModel {
                     messageCount: state.messages.count
                 )
                 await loadExtensionsCatalog()
+            }
+
+            if backendID == .hermes {
+                let capabilities = await capabilitiesLoader()
+                supportsImageAttachments = capabilities.hasACPImagePrompts
+            } else {
+                supportsImageAttachments = false
             }
 
             await refreshAvailableModels()
@@ -518,14 +554,18 @@ final class AgentChatViewModel {
     }
 
     func send(_ content: String) async throws {
+        try await send(content, images: [])
+    }
+
+    func send(_ content: String, images: [ChatImageAttachment]) async throws {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty || !images.isEmpty else { return }
         idleSlashNotice = nil
 
         // Claude has none of Hermes's ACP `/queue` & `/steer` idle-rewrite
         // semantics — the typed text goes through verbatim, as before.
         guard backendID == .hermes else {
-            try await controller.send(trimmed)
+            try await controller.send(trimmed.isEmpty ? " " : trimmed, images: images)
             return
         }
 
@@ -535,6 +575,7 @@ final class AgentChatViewModel {
         let isAgentWorking = state.isRunning
         let parsed = RichChatViewModel.parseSlashName(trimmed)
         let capabilities = await capabilitiesLoader()
+        supportsImageAttachments = capabilities.hasACPImagePrompts
 
         // A typed `/queue <text>` with nothing running is not a queue on
         // Hermes's side: the adapter appends it and returns `end_turn`
@@ -570,15 +611,35 @@ final class AgentChatViewModel {
             idleSlashNotice = subFloorNotice
         }
 
-        let wireText = idleQueueText ?? trimmed
-        try await controller.send(wireText)
+        let wireText = idleQueueText ?? (trimmed.isEmpty ? " " : trimmed)
+
+        // Mid-turn `/queue` mirror (optimistic header chip).
+        if isAgentWorking,
+           parsed.name == "queue",
+           idleQueueText == nil,
+           capabilities.hasACPQueue {
+            let queuedText = parsed.args.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !queuedText.isEmpty {
+                queuedPrompts.append(HermesQueuedPrompt(text: queuedText))
+                transientHint = "Queued — runs after current turn."
+                scheduleHintClear()
+            }
+        } else if isAgentWorking,
+                  parsed.name == "steer",
+                  !idleSteer,
+                  capabilities.hasACPSteer {
+            transientHint = "Guidance queued — applies after the next tool call."
+            scheduleHintClear()
+        }
+
+        try await controller.send(wireText, images: images)
     }
 
-    func sendDraft() async throws {
+    func sendDraft(images: [ChatImageAttachment] = []) async throws {
         let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else { return }
+        guard !message.isEmpty || !images.isEmpty else { return }
         draft = ""
-        try await send(message)
+        try await send(message, images: images)
     }
 
     /// Accept a slash hint into the composer. Does not send — the user can
@@ -593,6 +654,7 @@ final class AgentChatViewModel {
     }
 
     func close() async {
+        leaveVoiceLive()
         guard isStarted else { return }
         do {
             try await controller.close()
@@ -602,6 +664,8 @@ final class AgentChatViewModel {
             // the surface because a close notification failed.
         }
         isStarted = false
+        activeSessionID = nil
+        queuedPrompts = []
     }
 
     func respond(to request: AgentPermissionRequest, optionID: String) async throws {
@@ -610,6 +674,48 @@ final class AgentChatViewModel {
 
     func cancelPermission(_ request: AgentPermissionRequest) async throws {
         try await controller.cancelPermission(request)
+    }
+
+    // MARK: - Live Voice (Hermes)
+
+    var canHostVoiceTurns: Bool {
+        backendID == .hermes && isStarted && serverContext != nil
+    }
+
+    func voiceLiveAvailability(capabilities: HermesCapabilities) -> VoiceLiveAvailability {
+        VoiceLiveReadiness.availability(capabilities: capabilities, voiceChatMode: voiceChatModeRaw)
+    }
+
+    func startVoiceLive(capabilities: HermesCapabilities) {
+        guard backendID == .hermes, isStarted, let context = serverContext else { return }
+        guard canHostVoiceTurns else { return }
+        guard let engineKind = voiceLiveAvailability(capabilities: capabilities).engineKind else { return }
+        voiceLive.start(context: context, host: self, engineKind: engineKind)
+        if voiceLive.consumeStartRefusal() == .blockedByAnotherWindow {
+            transientHint = String(
+                localized: "Live Voice is running in another Scarf window. End it there first."
+            )
+            scheduleHintClear()
+        }
+    }
+
+    func leaveVoiceLive() {
+        voiceLive.dismiss()
+    }
+
+    func acceptVoiceLiveConsent(capabilities: HermesCapabilities) {
+        guard voiceLive.pendingConsent != nil else { return }
+        voiceLive.acceptConsent()
+        startVoiceLive(capabilities: capabilities)
+    }
+
+    private func scheduleHintClear() {
+        hintClearTask?.cancel()
+        hintClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.transientHint = nil
+        }
     }
 
     private func refreshSlashHints() {
@@ -639,9 +745,15 @@ final class AgentChatViewModel {
         stateTask = Task { [weak self] in
             for await snapshot in stream {
                 guard !Task.isCancelled else { break }
-                self?.state = snapshot
-                self?.applyDiscoveredSlashCommands(from: snapshot)
-                self?.refreshDiscoveryAfterClaudeHandshake(from: snapshot)
+                guard let self else { break }
+                let wasRunning = self.wasAgentRunning
+                self.state = snapshot
+                self.wasAgentRunning = snapshot.isRunning
+                if wasRunning, !snapshot.isRunning {
+                    self.queuedPrompts = []
+                }
+                self.applyDiscoveredSlashCommands(from: snapshot)
+                self.refreshDiscoveryAfterClaudeHandshake(from: snapshot)
             }
         }
     }
@@ -656,6 +768,94 @@ final class AgentChatViewModel {
         Task { [weak self] in
             await self?.refreshAvailableModels()
             await self?.loadExtensionsCatalog()
+        }
+    }
+}
+
+// MARK: - VoiceTurnHost
+
+extension AgentChatViewModel: VoiceTurnHost {
+    enum VoiceTurnSubmitError: Error, Equatable {
+        case noSession
+    }
+
+    var isVoiceTurnBusy: Bool { state.isRunning }
+
+    var activeVoiceToolName: String? {
+        state.toolCalls.first(where: { $0.status == .running })?.title
+    }
+
+    var voiceChatID: String? { activeSessionID }
+
+    var isBusyWithNonVoiceTurn: Bool {
+        // AgentChat has no separate typed/voice origin ledger — any running
+        // turn blocks a new spoken submit the same way.
+        state.isRunning
+    }
+
+    static let voiceBusyReply =
+        "Hermes is busy with another request in this chat, so I didn't send that. Ask me again when it's finished."
+
+    func submitVoiceTurn(_ request: VoiceTurnRequest) async throws {
+        guard canHostVoiceTurns else { throw VoiceTurnSubmitError.noSession }
+        if state.isRunning {
+            busyVoiceRequestIDs.append(request.id)
+            if busyVoiceRequestIDs.count > 8 {
+                busyVoiceRequestIDs.removeFirst(busyVoiceRequestIDs.count - 8)
+            }
+            transientHint = String(
+                localized: "Live Voice didn't interrupt your typed request. Ask again when it's finished."
+            )
+            scheduleHintClear()
+            return
+        }
+        voiceTurnPrompts.append((id: request.id, prompt: request.prompt))
+        if voiceTurnPrompts.count > 8 {
+            voiceTurnPrompts.removeFirst(voiceTurnPrompts.count - 8)
+        }
+        try await controller.send(
+            request.prompt,
+            images: [],
+            contextNotes: request.contextNotes
+        )
+    }
+
+    func cancelActiveVoiceTurn() async {
+        guard state.isRunning else { return }
+        try? await controller.cancel()
+    }
+
+    func voiceTurnReply(for requestID: String) -> VoiceTurnReply? {
+        if busyVoiceRequestIDs.contains(requestID) {
+            return VoiceTurnReply(text: Self.voiceBusyReply, isStreaming: false)
+        }
+        guard let prompt = voiceTurnPrompts.last(where: { $0.id == requestID })?.prompt else {
+            return nil
+        }
+        let wanted = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let userIndex = state.messages.lastIndex(where: {
+            $0.role == .user
+                && $0.content.trimmingCharacters(in: .whitespacesAndNewlines) == wanted
+        }) else {
+            return nil
+        }
+        let after = state.messages.suffix(from: state.messages.index(after: userIndex))
+        let assistant = after.last(where: { $0.role == .assistant })?.content ?? ""
+        let draft = state.assistantDraft
+        let text = draft.isEmpty ? assistant : draft
+        guard !text.isEmpty else { return nil }
+        return VoiceTurnReply(text: text, isStreaming: state.isRunning && !draft.isEmpty)
+    }
+
+    func voiceSeedTurns() -> [VoiceLiveText.SeedTurn] {
+        state.messages.compactMap { message in
+            let text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            switch message.role {
+            case .user: return VoiceLiveText.SeedTurn(role: .user, text: text)
+            case .assistant: return VoiceLiveText.SeedTurn(role: .assistant, text: text)
+            default: return nil
+            }
         }
     }
 }

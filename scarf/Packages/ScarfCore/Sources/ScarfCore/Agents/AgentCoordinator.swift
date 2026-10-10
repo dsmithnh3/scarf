@@ -97,7 +97,21 @@ public actor AgentCoordinator {
     }
 
     public func send(_ message: AgentMessage, in session: AgentSession) async throws {
-        try await requiredBackend(session.backendID).send(message, in: session)
+        try await send(message, images: [], contextNotes: [], in: session)
+    }
+
+    public func send(
+        _ message: AgentMessage,
+        images: [ChatImageAttachment],
+        contextNotes: [ACPContextNote] = [],
+        in session: AgentSession
+    ) async throws {
+        try await requiredBackend(session.backendID).send(
+            message,
+            images: images,
+            contextNotes: contextNotes,
+            in: session
+        )
     }
 
     public func respond(to request: AgentPermissionRequest, optionID: String, in session: AgentSession) async throws {

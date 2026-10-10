@@ -179,6 +179,29 @@ actor ClaudeCodeBackend: SessionScopedAgentBackend {
     }
 
     func send(_ message: AgentMessage, in session: AgentSession) async throws {
+        try await send(message, images: [], contextNotes: [], in: session)
+    }
+
+    func send(
+        _ message: AgentMessage,
+        images: [ChatImageAttachment],
+        contextNotes: [ACPContextNote],
+        in session: AgentSession
+    ) async throws {
+        if !images.isEmpty {
+            throw AgentError(
+                code: "claude.images-unsupported",
+                message: "Claude Code in Scarf does not support image attachments yet. Send text only, or use a Hermes project for vision prompts.",
+                isRecoverable: true
+            )
+        }
+        if !contextNotes.isEmpty {
+            throw AgentError(
+                code: "claude.context-notes-unsupported",
+                message: "Claude Code does not support Live Voice context notes",
+                isRecoverable: true
+            )
+        }
         guard message.role == .user else {
             throw AgentError(
                 code: "claude.unsupported-message-role",

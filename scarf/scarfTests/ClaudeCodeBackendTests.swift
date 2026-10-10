@@ -384,6 +384,36 @@ struct ClaudeCodeBackendTests {
         #expect(await backend.installationStatus() == .unavailable(reason: "version probe failed"))
     }
 
+    @Test("send with images throws claude.images-unsupported")
+    func sendRejectsImages() async throws {
+        let backend = ClaudeCodeBackend(
+            executableResolver: { "/tmp/claude" },
+            installationProbe: { _ in .available(version: "test") },
+            environmentProvider: { [:] }
+        )
+        let session = AgentSession(id: "img", backendID: .claudeCode)
+        let image = ChatImageAttachment(
+            mimeType: "image/jpeg",
+            base64Data: "abc",
+            thumbnailBase64: nil,
+            filename: nil,
+            approximateByteCount: 3
+        )
+        do {
+            try await backend.send(
+                AgentMessage(role: .user, content: "hi"),
+                images: [image],
+                contextNotes: [],
+                in: session
+            )
+            Issue.record("Expected claude.images-unsupported")
+        } catch let error as AgentError {
+            #expect(error.code == "claude.images-unsupported")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("fetchConversationHistory stays empty — no JSONL invent")
     func fetchConversationHistoryReturnsEmpty() async throws {
         let backend = ClaudeCodeBackend(

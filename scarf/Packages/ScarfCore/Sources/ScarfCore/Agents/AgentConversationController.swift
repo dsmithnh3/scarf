@@ -224,6 +224,14 @@ public actor AgentConversationController {
     }
 
     public func send(_ content: String) async throws {
+        try await send(content, images: [], contextNotes: [])
+    }
+
+    public func send(
+        _ content: String,
+        images: [ChatImageAttachment],
+        contextNotes: [ACPContextNote] = []
+    ) async throws {
         guard let session = activeSession else {
             throw AgentConversationControllerError.noActiveSession
         }
@@ -234,7 +242,12 @@ public actor AgentConversationController {
         persistDurableTranscript()
 
         do {
-            try await coordinator.send(message, in: session)
+            try await coordinator.send(
+                message,
+                images: images,
+                contextNotes: contextNotes,
+                in: session
+            )
         } catch {
             state.apply(
                 .error(
