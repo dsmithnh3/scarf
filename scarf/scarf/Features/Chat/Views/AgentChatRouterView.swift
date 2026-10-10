@@ -128,8 +128,22 @@ private struct AgentProjectChatView: View {
     @Bindable var viewModel: AgentChatViewModel
 
     @Environment(AppCoordinator.self) private var coordinator
+    @AppStorage(ChatDensityKeys.toolCardStyle)
+    private var toolCardStyleRaw: String = ToolCardStyle.full.rawValue
+    @AppStorage(ChatDensityKeys.reasoningStyle)
+    private var reasoningStyleRaw: String = ReasoningStyle.disclosure.rawValue
+    @AppStorage(ChatDensityKeys.fontScale)
+    private var chatFontScale: Double = ChatFontScale.default
     @State private var selectedSlashHintIndex = 0
     @State private var isExtensionsSheetPresented = false
+
+    private var toolCardStyle: ToolCardStyle {
+        ToolCardStyle(rawValue: toolCardStyleRaw) ?? .full
+    }
+
+    private var reasoningStyle: ReasoningStyle {
+        ReasoningStyle(rawValue: reasoningStyleRaw) ?? .disclosure
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -139,6 +153,7 @@ private struct AgentProjectChatView: View {
             Divider()
             composer
         }
+        .dynamicTypeSize(ChatFontScale.dynamicTypeSize(for: chatFontScale))
         .task(id: project.rootPath) {
             await startAndConsumeHandoff()
         }
@@ -340,16 +355,11 @@ private struct AgentProjectChatView: View {
                     AgentMessageRow(message: message)
                 }
 
-                if !viewModel.state.reasoningDraft.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Reasoning")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(viewModel.state.reasoningDraft)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
+                if !viewModel.state.reasoningDraft.isEmpty, reasoningStyle != .hidden {
+                    AgentReasoningDraftView(
+                        text: viewModel.state.reasoningDraft,
+                        style: reasoningStyle
+                    )
                 }
 
                 if !viewModel.state.assistantDraft.isEmpty {
@@ -358,15 +368,20 @@ private struct AgentProjectChatView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Text(viewModel.state.assistantDraft)
+                            .font(ChatFontScale.body(chatFontScale))
                             .textSelection(.enabled)
                     }
                 }
 
-                if !viewModel.state.toolCalls.isEmpty
+                if toolCardStyle != .hidden,
+                   !viewModel.state.toolCalls.isEmpty
                     || !viewModel.state.commands.isEmpty
                     || !viewModel.state.fileChanges.isEmpty
                     || viewModel.state.usage != nil {
-                    AgentActivitySummary(state: viewModel.state)
+                    AgentActivitySummary(
+                        state: viewModel.state,
+                        toolStyle: toolCardStyle
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -541,12 +556,41 @@ private struct AgentMessageRow: View {
     }
 }
 
-/// Expanded activity log: every tool call's title + input, every command
-/// line, every file-change path, and the running token usage when the
-/// backend reports it. Replaces the earlier count-only summary so a user
-/// can see WHAT ran, not just how many things did.
+/// Reasoning draft honoring Settings → Display → Chat density.
+private struct AgentReasoningDraftView: View {
+    let text: String
+    let style: ReasoningStyle
+
+    var body: some View {
+        switch style {
+        case .hidden:
+            EmptyView()
+        case .inline:
+            Text(text)
+                .font(.caption.italic())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        case .disclosure:
+            DisclosureGroup {
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                Label("Reasoning", systemImage: "brain")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Expanded activity log: tools, commands (with expandable output), file
+/// changes, usage. Honors `ToolCardStyle` compact vs full.
 private struct AgentActivitySummary: View {
     let state: AgentConversationState
+    var toolStyle: ToolCardStyle = .full
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -555,37 +599,11 @@ private struct AgentActivitySummary: View {
                 .foregroundStyle(.secondary)
 
             ForEach(state.toolCalls) { call in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: toolIcon(for: call.status))
-                        .foregroundStyle(toolColor(for: call.status))
-                        .font(.caption)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("\(call.title) · \(call.kind)")
-                            .font(.caption.weight(.medium))
-                        if let input = call.input, !input.isEmpty {
-                            Text(input)
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
+                toolRow(call)
             }
 
             ForEach(state.commands) { command in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "terminal")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                    Text(command.command)
-                        .font(.system(.caption2, design: .monospaced))
-                        .lineLimit(2)
-                    Spacer(minLength: 0)
-                    Text(commandStatusLabel(command.status))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                commandRow(command)
             }
 
             ForEach(Array(state.fileChanges.enumerated()), id: \.offset) { _, change in
@@ -613,6 +631,97 @@ private struct AgentActivitySummary: View {
         }
         .padding(10)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func toolRow(_ call: AgentToolCall) -> some View {
+        let result = state.toolResults[call.id]
+        let detail = toolDetailText(call: call, result: result)
+        if toolStyle == .compact || detail == nil {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: toolIcon(for: call.status))
+                    .foregroundStyle(toolColor(for: call.status))
+                    .font(.caption)
+                Text("\(call.title) · \(call.kind)")
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+        } else if let detail {
+            DisclosureGroup {
+                Text(detail)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: toolIcon(for: call.status))
+                        .foregroundStyle(toolColor(for: call.status))
+                        .font(.caption)
+                    Text("\(call.title) · \(call.kind)")
+                        .font(.caption.weight(.medium))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func commandRow(_ command: AgentCommand) -> some View {
+        let output = commandOutputText(for: command.id)
+        if let output, !output.isEmpty {
+            DisclosureGroup {
+                Text(output)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                commandLabel(command)
+            }
+        } else {
+            commandLabel(command)
+        }
+    }
+
+    private func commandLabel(_ command: AgentCommand) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "terminal")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+            Text(command.command)
+                .font(.system(.caption2, design: .monospaced))
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            Text(commandStatusLabel(command.status))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func toolDetailText(call: AgentToolCall, result: AgentToolResult?) -> String? {
+        var parts: [String] = []
+        if let input = call.input, !input.isEmpty { parts.append(input) }
+        if let output = result?.output, !output.isEmpty { parts.append(output) }
+        if let error = result?.errorMessage, !error.isEmpty { parts.append(error) }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: "\n\n")
+    }
+
+    private func commandOutputText(for commandID: String) -> String? {
+        var parts: [String] = []
+        if let streamed = state.commandOutput[commandID], !streamed.isEmpty {
+            parts.append(streamed)
+        }
+        if let result = state.commandResults[commandID] {
+            if let output = result.output, !output.isEmpty { parts.append(output) }
+            if let err = result.errorOutput, !err.isEmpty { parts.append(err) }
+            if let code = result.exitCode {
+                parts.append("exit \(code)")
+            }
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: "\n")
     }
 
     private func toolIcon(for status: AgentToolStatus) -> String {
