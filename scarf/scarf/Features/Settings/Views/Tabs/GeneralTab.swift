@@ -134,12 +134,11 @@ private struct ExcludedProvidersSection: View {
                         .font(ScarfFont.monoSmall)
                         .foregroundStyle(ScarfColor.foregroundPrimary)
                     Spacer()
-                    Button {
+                    Button("Stop excluding \(provider)", systemImage: "minus.circle") {
                         save(viewModel.config.excludedProviders.filter { $0 != provider })
-                    } label: {
-                        Image(systemName: "minus.circle")
-                            .foregroundStyle(ScarfColor.foregroundMuted)
                     }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(ScarfColor.foregroundMuted)
                     .buttonStyle(.plain)
                     .help("Stop excluding this provider")
                 }
@@ -153,14 +152,13 @@ private struct ExcludedProvidersSection: View {
                     .font(ScarfFont.monoSmall)
                     .onSubmit { addNew(newProvider) }
                 if !suggestions.isEmpty {
-                    Menu {
+                    Menu("Known provider IDs", systemImage: "chevron.up.chevron.down") {
                         ForEach(suggestions, id: \.self) { id in
                             Button(id) { addNew(id) }
                         }
-                    } label: {
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption)
                     }
+                    .labelStyle(.iconOnly)
+                    .font(.caption)
                     .menuStyle(.borderlessButton)
                     .frame(width: 28)
                     .help("Known provider IDs")

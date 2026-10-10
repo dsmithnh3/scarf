@@ -433,13 +433,15 @@ struct SessionsView: View {
         // be a claim about the data; the banner above says what happened.
         Group {
             if viewModel.loadError != nil && viewModel.sessions.isEmpty {
-                Text("Sessions couldn't be loaded.")
+                ContentUnavailableView(
+                    "Sessions couldn't be loaded",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("Check the banner above for details, then reload.")
+                )
             } else {
-                Text("No sessions match this filter.")
+                ContentUnavailableView.search
             }
         }
-        .scarfStyle(.body)
-        .foregroundStyle(ScarfColor.foregroundMuted)
         .frame(maxWidth: .infinity)
         .padding(ScarfSpace.s10)
     }

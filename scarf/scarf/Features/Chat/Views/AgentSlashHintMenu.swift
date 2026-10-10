@@ -28,12 +28,11 @@ struct AgentSlashHintMenu: View {
                 hintList
             }
         }
-        .background(.regularMaterial)
+        .scarfChromeGlass()
         .overlay(
-            RoundedRectangle(cornerRadius: ScarfRadius.xl)
+            RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
                 .strokeBorder(ScarfColor.borderStrong, lineWidth: 0.5)
         )
-        .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.xl))
         .scarfShadow(ScarfShadow.md)
     }
 
@@ -42,16 +41,20 @@ struct AgentSlashHintMenu: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(presentation.hints.enumerated()), id: \.element.id) { index, hint in
-                        AgentSlashHintRow(
-                            hint: hint,
-                            isSelected: index == selectedIndex
-                        )
-                        .id(index)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
+                        Button {
                             selectedIndex = index
                             onSelect(hint)
+                        } label: {
+                            AgentSlashHintRow(
+                                hint: hint,
+                                isSelected: index == selectedIndex
+                            )
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .id(index)
+                        .accessibilityLabel(Text(hint.slashName))
+                        .accessibilityHint(Text(hint.description))
                     }
                 }
             }

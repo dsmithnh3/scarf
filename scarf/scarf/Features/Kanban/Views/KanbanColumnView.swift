@@ -76,8 +76,7 @@ struct KanbanColumnView: View {
             header
                 .padding(.horizontal, ScarfSpace.s3)
                 .padding(.vertical, ScarfSpace.s2)
-                .background(ScarfColor.backgroundSecondary.opacity(0.001))
-                .background(.ultraThinMaterial)
+                .background(ScarfColor.backgroundSecondary.opacity(0.85))
             Divider()
                 .opacity(0.5)
             ScrollView {

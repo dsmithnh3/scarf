@@ -504,12 +504,11 @@ private struct OverrideRow: View {
             }
             .labelsHidden()
             .frame(width: 110)
-            Button(action: onRemove) {
-                Image(systemName: "minus.circle")
-                    .foregroundStyle(ScarfColor.foregroundMuted)
-            }
-            .buttonStyle(.plain)
-            .help("Remove this override")
+            Button("Remove this override", systemImage: "minus.circle", action: onRemove)
+                .labelStyle(.iconOnly)
+                .foregroundStyle(ScarfColor.foregroundMuted)
+                .buttonStyle(.plain)
+                .help("Remove this override")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

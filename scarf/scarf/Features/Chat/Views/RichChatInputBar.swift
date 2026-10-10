@@ -93,12 +93,11 @@ struct RichChatInputBar: View {
                     onSelect: insertCommand
                 )
                 .id(menuQuery)
-                .background(.regularMaterial)
+                .scarfChromeGlass()
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(.separator, lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
+                        .strokeBorder(ScarfColor.borderStrong, lineWidth: 0.5)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 2)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)

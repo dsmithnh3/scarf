@@ -69,12 +69,11 @@ struct AgentPermissionCard: View {
             }
         }
         .padding(ScarfSpace.s3)
-        .background(.regularMaterial)
+        .scarfChromeGlass()
         .overlay(
-            RoundedRectangle(cornerRadius: ScarfRadius.xl)
+            RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
                 .strokeBorder(ScarfColor.borderStrong, lineWidth: 0.5)
         )
-        .clipShape(RoundedRectangle(cornerRadius: ScarfRadius.xl))
         .scarfShadow(ScarfShadow.md)
     }
 

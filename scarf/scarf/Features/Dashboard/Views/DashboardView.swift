@@ -260,21 +260,28 @@ struct DashboardView: View {
             }
             VStack(spacing: 0) {
                 if viewModel.recentSessions.isEmpty && !viewModel.isLoading {
-                    Text("No sessions yet")
-                        .scarfStyle(.body)
-                        .foregroundStyle(ScarfColor.foregroundMuted)
-                        .padding(ScarfSpace.s5)
-                        .frame(maxWidth: .infinity)
+                    ContentUnavailableView(
+                        "No sessions yet",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("New Hermes conversations will show up here.")
+                    )
+                    .padding(ScarfSpace.s5)
+                    .frame(maxWidth: .infinity)
                 } else {
                     ForEach(Array(viewModel.recentSessions.enumerated()), id: \.element.id) { idx, session in
-                        SessionRow(session: session, preview: viewModel.sessionPreviews[session.id])
-                            .padding(.horizontal, ScarfSpace.s4)
-                            .padding(.vertical, ScarfSpace.s3 - 2)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                coordinator.selectedSessionId = session.id
-                                coordinator.selectedSection = .sessions
-                            }
+                        Button {
+                            coordinator.selectedSessionId = session.id
+                            coordinator.selectedSection = .sessions
+                        } label: {
+                            SessionRow(session: session, preview: viewModel.sessionPreviews[session.id])
+                                .padding(.horizontal, ScarfSpace.s4)
+                                .padding(.vertical, ScarfSpace.s3 - 2)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            Text(session.displayLabel(preview: viewModel.sessionPreviews[session.id]))
+                        )
                         if idx < viewModel.recentSessions.count - 1 {
                             Rectangle()
                                 .fill(ScarfColor.border)
@@ -333,11 +340,13 @@ struct DashboardView: View {
             }
             VStack(spacing: 0) {
                 if viewModel.recentActivity.isEmpty && !viewModel.isLoading {
-                    Text("No activity yet")
-                        .scarfStyle(.body)
-                        .foregroundStyle(ScarfColor.foregroundMuted)
-                        .padding(ScarfSpace.s5)
-                        .frame(maxWidth: .infinity)
+                    ContentUnavailableView(
+                        "No activity yet",
+                        systemImage: "bolt.horizontal",
+                        description: Text("Tool calls from recent sessions will appear here.")
+                    )
+                    .padding(ScarfSpace.s5)
+                    .frame(maxWidth: .infinity)
                 } else {
                     ForEach(Array(viewModel.recentActivity.enumerated()), id: \.element.id) { idx, entry in
                         DashActivityRow(entry: entry) {

@@ -93,14 +93,13 @@ struct ChatInspectorPane: View {
                 }
             }
             Spacer()
-            Button {
+            Button("Close inspector", systemImage: "xmark") {
                 chatViewModel.setInspectorFocus(.none)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11))
-                    .foregroundStyle(ScarfColor.foregroundMuted)
-                    .padding(4)
             }
+            .labelStyle(.iconOnly)
+            .font(.caption)
+            .foregroundStyle(ScarfColor.foregroundMuted)
+            .padding(4)
             .buttonStyle(.plain)
             .help("Close inspector")
         }
@@ -174,14 +173,13 @@ struct ChatInspectorPane: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button {
+                Button("Close inspector", systemImage: "xmark") {
                     chatViewModel.focusedToolCallId = nil
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11))
-                        .foregroundStyle(ScarfColor.foregroundMuted)
-                        .padding(4)
                 }
+                .labelStyle(.iconOnly)
+                .font(.caption)
+                .foregroundStyle(ScarfColor.foregroundMuted)
+                .padding(4)
                 .buttonStyle(.plain)
                 .help("Close inspector")
             }

@@ -430,7 +430,7 @@ struct KanbanBoardView: View {
     // MARK: - Board area
 
     private var boardArea: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             HStack(spacing: ScarfSpace.s4) {
                 ForEach(viewModel.visibleColumns, id: \.self) { column in
                     KanbanColumnView(
@@ -459,6 +459,7 @@ struct KanbanBoardView: View {
             }
             .padding(ScarfSpace.s4)
         }
+        .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

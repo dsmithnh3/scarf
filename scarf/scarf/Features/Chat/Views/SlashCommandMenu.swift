@@ -57,19 +57,24 @@ struct SlashCommandMenu: View {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                             let isDisabled = disabledCommandNames.contains(command.name)
-                            SlashCommandRow(
-                                command: command,
-                                isSelected: index == selectedIndex,
-                                isDisabled: isDisabled,
-                                disabledReason: isDisabled ? disabledReason : nil
-                            )
-                            .id(index)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
+                            Button {
                                 guard !isDisabled else { return }
                                 selectedIndex = index
                                 onSelect(command)
+                            } label: {
+                                SlashCommandRow(
+                                    command: command,
+                                    isSelected: index == selectedIndex,
+                                    isDisabled: isDisabled,
+                                    disabledReason: isDisabled ? disabledReason : nil
+                                )
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            .disabled(isDisabled)
+                            .id(index)
+                            .accessibilityLabel(Text("/\(command.name)"))
+                            .accessibilityHint(Text(command.description))
                         }
                     }
                 }

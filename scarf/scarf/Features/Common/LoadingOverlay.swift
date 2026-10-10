@@ -53,7 +53,7 @@ struct LoadingOverlay: ViewModifier {
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
-                                .background(.thinMaterial, in: Capsule())
+                                .scarfChromeGlassCapsule()
                                 .padding(ScarfSpace.s2)
                             }
                             Spacer()
