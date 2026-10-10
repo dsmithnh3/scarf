@@ -201,7 +201,7 @@ struct KanbanInspectorPane: View {
                     // chips onto a second visual line, which looked
                     // broken when a single name pushed past the
                     // available width.
-                    ScrollView(.horizontal, showsIndicators: false) {
+                    ScrollView(.horizontal) {
                         HStack(spacing: 4) {
                             ScarfBadge(verbatim: task.status.lowercased(), kind: badgeKind(for: task.status))
                                 .fixedSize()
@@ -262,6 +262,7 @@ struct KanbanInspectorPane: View {
                             }
                         }
                     }
+                    .scrollIndicators(.hidden)
                 } else {
                     Text("Loading…")
                         .scarfStyle(.title3)
@@ -454,13 +455,14 @@ struct KanbanInspectorPane: View {
             Text("Diagnostics")
                 .scarfStyle(.captionUppercase)
                 .foregroundStyle(ScarfColor.foregroundFaint)
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 HStack(spacing: 4) {
                     ForEach(diags) { diag in
                         diagnosticBadge(diag)
                     }
                 }
             }
+            .scrollIndicators(.hidden)
         }
         .padding(.top, 4)
     }

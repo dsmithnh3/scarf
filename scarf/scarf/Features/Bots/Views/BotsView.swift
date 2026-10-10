@@ -260,21 +260,14 @@ struct BotsView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: ScarfSpace.s3) {
-            Image(systemName: "person.2.crop.square.stack")
-                .font(.largeTitle)
-                .foregroundStyle(ScarfColor.foregroundFaint)
-            Text("No bots yet")
-                .scarfStyle(.bodyEmph)
-            Text("""
-                 A bot is a Hermes profile with a name, a face and a role. Each one gets \
-                 its own memory, skills, credentials and settings, so a research bot and \
-                 a deploy bot never share context.
-                 """)
-                .scarfStyle(.caption)
-                .foregroundStyle(ScarfColor.foregroundMuted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
+        ContentUnavailableView {
+            Label("No bots yet", systemImage: "person.2.crop.square.stack")
+        } description: {
+            Text("A bot is a Hermes profile with a name, a face and a role. Each one gets its own memory, skills, credentials and settings, so a research bot and a deploy bot never share context.")
+            if !viewModel.otherProfiles.isEmpty {
+                Text("Already have profiles? Open Other profiles below to turn one into a bot.")
+            }
+        } actions: {
             Button {
                 editor = .create()
             } label: {
@@ -283,12 +276,8 @@ struct BotsView: View {
             .buttonStyle(ScarfPrimaryButton())
             .disabled(viewModel.isWorking)
             .accessibilityLabel("Create your first bot")
-            if !viewModel.otherProfiles.isEmpty {
-                Text("Already have profiles? Open Other profiles below to turn one into a bot.")
-                    .scarfStyle(.footnote)
-                    .foregroundStyle(ScarfColor.foregroundFaint)
-            }
         }
+        .frame(maxWidth: 420)
         .frame(maxWidth: .infinity)
         .padding(.vertical, ScarfSpace.s6)
     }

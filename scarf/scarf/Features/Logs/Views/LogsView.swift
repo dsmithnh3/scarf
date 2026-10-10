@@ -136,7 +136,7 @@ struct LogsView: View {
                 .frame(width: 100, alignment: .leading)
             Text(verbatim: entry.level.rawValue.uppercased())
                 .font(ScarfFont.caption2)
-                .fontWeight(.bold)
+                .bold()
                 .tracking(0.4)
                 .foregroundStyle(colorForLevel(entry.level))
                 .frame(width: 50, alignment: .leading)

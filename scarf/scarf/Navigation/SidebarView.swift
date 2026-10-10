@@ -137,8 +137,7 @@ struct SidebarView: View {
             .accessibilityIdentifier("sidebar.nav")
             footer
         }
-        .background(.regularMaterial)
-        .background(ScarfColor.backgroundTertiary.opacity(0.4))
+        .scarfChromeGlass()
         .splitViewAutosaveName("ScarfMainSidebar.\(serverContext.id)")
         .onAppear {
             HermesProfileResolver.invalidateCache()

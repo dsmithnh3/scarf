@@ -328,16 +328,10 @@ struct ManageServersView: View {
     }
 
     private var empty: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "server.rack")
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
-            Text("No remote servers").scarfStyle(.headline)
+        ContentUnavailableView {
+            Label("No remote servers", systemImage: "server.rack")
+        } description: {
             Text("Click Add to connect to a remote Hermes installation over SSH.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -155,8 +155,7 @@ struct ModelPickerSheet: View {
                 ProgressView("Loading providers…")
                     .progressViewStyle(.circular)
                     .padding()
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .scarfChromeGlass()
             }
         }
         .task {

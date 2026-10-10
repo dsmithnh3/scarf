@@ -420,6 +420,11 @@ public extension View {
     func scarfChromeGlass() -> some View {
         modifier(ScarfChromeGlassModifier())
     }
+
+    /// Capsule chrome for floating status chips (load-earlier, preparing…).
+    func scarfChromeGlassCapsule() -> some View {
+        modifier(ScarfChromeGlassCapsuleModifier())
+    }
 }
 
 private struct ScarfChromeGlassModifier: ViewModifier {
@@ -433,6 +438,16 @@ private struct ScarfChromeGlassModifier: ViewModifier {
             }
         } else {
             content.background(ScarfColor.backgroundSecondary)
+        }
+    }
+}
+
+private struct ScarfChromeGlassCapsuleModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, iOS 26, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content.background(.thinMaterial, in: Capsule())
         }
     }
 }

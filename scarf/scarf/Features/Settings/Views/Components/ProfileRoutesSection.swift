@@ -350,21 +350,22 @@ private struct ProfileRouteRow: View {
                         .truncationMode(.middle)
                 }
                 Spacer()
-                Toggle("", isOn: Binding(get: { route.enabled }, set: onToggleEnabled))
+                Toggle("Route enabled", isOn: Binding(get: { route.enabled }, set: onToggleEnabled))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .help("Disable without deleting (writes `enabled: false`)")
-                Button(action: onEdit) {
-                    Image(systemName: "pencil").foregroundStyle(ScarfColor.foregroundMuted)
-                }
-                .buttonStyle(.plain)
-                .help("Edit this route")
-                Button(action: onRemove) {
-                    Image(systemName: "minus.circle").foregroundStyle(ScarfColor.foregroundMuted)
-                }
-                .buttonStyle(.plain)
-                .help("Remove this route")
+                    .accessibilityLabel("Route enabled")
+                Button("Edit this route", systemImage: "pencil", action: onEdit)
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(ScarfColor.foregroundMuted)
+                    .buttonStyle(.plain)
+                    .help("Edit this route")
+                Button("Remove this route", systemImage: "minus.circle", action: onRemove)
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(ScarfColor.foregroundMuted)
+                    .buttonStyle(.plain)
+                    .help("Remove this route")
             }
             if let reason = route.rejectionReason(capabilities: capabilities) {
                 warning(reason)
@@ -478,13 +479,12 @@ private struct ProfileRouteEditorSheet: View {
                             .textFieldStyle(.roundedBorder)
                             .font(ScarfFont.monoSmall)
                             .accessibilityLabel("Platform")
-                        Menu {
+                        Menu("Choose platform", systemImage: "chevron.down") {
                             ForEach(knownPlatforms, id: \.self) { platform in
                                 Button(platform) { route.platform = platform }
                             }
-                        } label: {
-                            Image(systemName: "chevron.down")
                         }
+                        .labelStyle(.iconOnly)
                         .menuStyle(.borderlessButton)
                         .frame(width: 24)
                     }
@@ -495,7 +495,10 @@ private struct ProfileRouteEditorSheet: View {
                 field("Profile", text: $route.profile, hint: "Target profile directory under ~/.hermes/profiles.")
                 GridRow {
                     Text("Enabled").scarfStyle(.caption).gridColumnAlignment(.trailing)
-                    Toggle("", isOn: $route.enabled).labelsHidden().toggleStyle(.switch)
+                    Toggle("Enabled", isOn: $route.enabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel("Enabled")
                 }
             }
 

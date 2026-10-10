@@ -98,7 +98,7 @@ struct ChatSessionListPane: View {
                     }
                     .padding(.horizontal, ScarfSpace.s3)
                     .padding(.vertical, ScarfSpace.s2)
-                    .background(.thinMaterial, in: Capsule())
+                    .scarfChromeGlassCapsule()
                     .padding(.bottom, ScarfSpace.s5)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .allowsHitTesting(false)
@@ -419,14 +419,10 @@ struct ChatSessionListPane: View {
     // MARK: - Empty state + footer
 
     private var emptyState: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 22))
-                .foregroundStyle(ScarfColor.foregroundFaint)
+        ContentUnavailableView {
+            Label("Sessions", systemImage: "bubble.left.and.bubble.right")
+        } description: {
             Text(emptyMessage)
-                .scarfStyle(.caption)
-                .foregroundStyle(ScarfColor.foregroundMuted)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(ScarfSpace.s5)

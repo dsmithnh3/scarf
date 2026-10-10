@@ -1,5 +1,6 @@
 import SwiftUI
 import ScarfCore
+import ScarfDesign
 
 struct RichChatMessageList: View {
     let groups: [MessageGroup]
@@ -127,7 +128,7 @@ struct RichChatMessageList: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(.regularMaterial, in: Capsule())
+                            .scarfChromeGlassCapsule()
                         }
                         .buttonStyle(.plain)
                         .disabled(isLoadingEarlier)

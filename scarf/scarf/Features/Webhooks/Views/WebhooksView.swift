@@ -169,17 +169,11 @@ struct WebhooksView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "arrow.up.right.square")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("No webhook subscriptions")
-                .foregroundStyle(.secondary)
+        ContentUnavailableView {
+            Label("No webhook subscriptions", systemImage: "arrow.up.right.square")
+        } description: {
             Text("Webhooks let external services trigger agent responses. Each subscription gets its own URL endpoint.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
+        } actions: {
             Button("Create Subscription") {
                 resetAddForm()
                 showAddSheet = true
@@ -187,6 +181,7 @@ struct WebhooksView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
         }
+        .frame(maxWidth: 440)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }

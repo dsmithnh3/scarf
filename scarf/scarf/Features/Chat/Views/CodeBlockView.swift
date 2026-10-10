@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ScarfDesign
 
 struct CodeBlockView: View {
     let code: String
@@ -17,50 +18,52 @@ struct CodeBlockView: View {
                 HStack {
                     Text(language)
                         .font(ChatFontScale.caption2(chatFontScale).bold())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ScarfColor.foregroundMuted)
                     Spacer()
                     copyButton
                 }
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
+                .padding(.horizontal, ScarfSpace.s3 - 2)
+                .padding(.top, ScarfSpace.s2 - 2)
                 .padding(.bottom, 2)
             } else {
                 HStack {
                     Spacer()
                     copyButton
                 }
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
+                .padding(.horizontal, ScarfSpace.s3 - 2)
+                .padding(.top, ScarfSpace.s2 - 2)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 Text(code)
                     .font(ChatFontScale.codeBlock(chatFontScale))
-                    .foregroundStyle(Color(nsColor: NSColor(red: 0.85, green: 0.87, blue: 0.91, alpha: 1.0)))
+                    .foregroundStyle(ScarfColor.foregroundPrimary)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
-                    .padding(.top, 4)
+                    .padding(.horizontal, ScarfSpace.s3 - 2)
+                    .padding(.bottom, ScarfSpace.s2)
+                    .padding(.top, ScarfSpace.s1)
             }
+            .scrollIndicators(.hidden)
         }
-        .background(Color(nsColor: NSColor(red: 0.11, green: 0.12, blue: 0.14, alpha: 1.0)))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(ScarfColor.backgroundTertiary)
+        .clipShape(.rect(cornerRadius: ScarfRadius.lg))
     }
 
     private var copyButton: some View {
-        Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(code, forType: .string)
-            copied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                copied = false
-            }
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.caption2)
-                .foregroundStyle(copied ? .green : .secondary)
+        Button("Copy code", systemImage: copied ? "checkmark" : "doc.on.doc", action: copyCode)
+            .labelStyle(.iconOnly)
+            .font(.caption)
+            .foregroundStyle(copied ? ScarfColor.success : ScarfColor.foregroundMuted)
+            .buttonStyle(.plain)
+            .help("Copy code")
+    }
+
+    private func copyCode() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            copied = false
         }
-        .buttonStyle(.plain)
-        .help("Copy code")
     }
 }

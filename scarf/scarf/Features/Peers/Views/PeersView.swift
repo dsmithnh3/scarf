@@ -83,33 +83,16 @@ struct PeersView: View {
     /// Registration is a CLI-only flow on purpose: `hermes peer add`
     /// takes the peer's `API_SERVER_KEY`, and Scarf never handles keys.
     private var emptyState: some View {
-        VStack(spacing: ScarfSpace.s3) {
-            Image(systemName: "network")
-                .font(.largeTitle)
-                .foregroundStyle(ScarfColor.foregroundFaint)
-            Text("No peers registered")
-                .scarfStyle(.bodyEmph)
-            Text("""
-                 A peer is another machine running the Hermes api_server gateway. \
-                 Register one from a terminal — the peer's API key is a credential, \
-                 so Scarf leaves that step to the CLI:
-                 """)
-                .scarfStyle(.caption)
-                .foregroundStyle(ScarfColor.foregroundMuted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 520)
+        ContentUnavailableView {
+            Label("No peers registered", systemImage: "network")
+        } description: {
+            Text("A peer is another machine running the Hermes api_server gateway. Register one from a terminal — the peer's API key is a credential, so Scarf leaves that step to the CLI.")
             Text("hermes peer add spark --url http://spark.lan:8377 --key <API_SERVER_KEY>")
-                .scarfStyle(.code)
+                .font(.body.monospaced())
                 .textSelection(.enabled)
-                .padding(ScarfSpace.s2)
-                .background(
-                    RoundedRectangle(cornerRadius: ScarfRadius.md, style: .continuous)
-                        .fill(ScarfColor.backgroundSecondary)
-                )
             Text("Already added some? They live under bot_peers: in config.yaml — check with \(HermesPeerCLI.listCommandHint).")
-                .scarfStyle(.footnote)
-                .foregroundStyle(ScarfColor.foregroundFaint)
         }
+        .frame(maxWidth: 520)
         .frame(maxWidth: .infinity)
         .padding(.vertical, ScarfSpace.s6)
     }

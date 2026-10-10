@@ -119,7 +119,7 @@ struct ActivityView: View {
                 }
                 .padding(.horizontal, ScarfSpace.s3)
                 .padding(.vertical, 4)
-                .background(.thinMaterial, in: Capsule())
+                .scarfChromeGlassCapsule()
             }
         }
         .padding(.horizontal, ScarfSpace.s6)
@@ -234,14 +234,11 @@ struct ActivityView: View {
     // MARK: - Empty / detail
 
     private var emptyState: some View {
-        VStack(spacing: ScarfSpace.s2) {
-            Image(systemName: "bolt.horizontal")
-                .font(.system(size: 28))
-                .foregroundStyle(ScarfColor.foregroundFaint)
-            Text("No activity yet")
-                .scarfStyle(.body)
-                .foregroundStyle(ScarfColor.foregroundMuted)
-        }
+        ContentUnavailableView(
+            "No activity yet",
+            systemImage: "bolt.horizontal",
+            description: Text("Tool calls show up here as Hermes works.")
+        )
         .frame(maxWidth: .infinity)
         .padding(ScarfSpace.s10)
     }

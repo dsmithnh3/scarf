@@ -216,23 +216,26 @@ struct ProjectChatSettingsSheet: View {
 
     private var defaultRow: some View {
         ScarfCard {
-            HStack {
-                Image(systemName: useGlobalDefault ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(useGlobalDefault ? ScarfColor.accent : ScarfColor.foregroundMuted)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Use global default")
-                        .scarfStyle(.title3)
-                    Text("Inherit `model.default` from ~/.hermes/config.yaml.")
-                        .scarfStyle(.footnote)
-                        .foregroundStyle(ScarfColor.foregroundMuted)
-                }
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
+            Button {
                 useGlobalDefault = true
                 selectedID = nil
+            } label: {
+                HStack {
+                    Image(systemName: useGlobalDefault ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(useGlobalDefault ? ScarfColor.accent : ScarfColor.foregroundMuted)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use global default")
+                            .scarfStyle(.title3)
+                        Text("Inherit `model.default` from ~/.hermes/config.yaml.")
+                            .scarfStyle(.footnote)
+                            .foregroundStyle(ScarfColor.foregroundMuted)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(useGlobalDefault ? .isSelected : [])
         }
     }
 
@@ -256,23 +259,27 @@ struct ProjectChatSettingsSheet: View {
     private func presetRow(_ preset: ModelPreset) -> some View {
         let selected = !useGlobalDefault && selectedID == preset.id
         return ScarfCard {
-            HStack {
-                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(selected ? ScarfColor.accent : ScarfColor.foregroundMuted)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(preset.name)
-                        .scarfStyle(.title3)
-                    Text("\(preset.providerID) / \(preset.modelID)")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(ScarfColor.foregroundMuted)
-                }
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
+            Button {
                 useGlobalDefault = false
                 selectedID = preset.id
+            } label: {
+                HStack {
+                    Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(selected ? ScarfColor.accent : ScarfColor.foregroundMuted)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(preset.name)
+                            .scarfStyle(.title3)
+                        Text("\(preset.providerID) / \(preset.modelID)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(ScarfColor.foregroundMuted)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(preset.name))
+            .accessibilityAddTraits(selected ? .isSelected : [])
         }
     }
 
